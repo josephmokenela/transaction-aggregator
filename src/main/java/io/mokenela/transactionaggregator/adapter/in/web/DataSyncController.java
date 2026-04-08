@@ -5,6 +5,9 @@ import io.mokenela.transactionaggregator.domain.model.DataSourceId;
 import io.mokenela.transactionaggregator.domain.port.in.ListAvailableSourcesUseCase;
 import io.mokenela.transactionaggregator.domain.port.in.SyncTransactionsCommand;
 import io.mokenela.transactionaggregator.domain.port.in.SyncTransactionsUseCase;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
@@ -13,6 +16,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/sync")
+@Tag(name = "Data Sync", description = "Trigger ingestion from mock data sources")
 class DataSyncController {
 
     private final SyncTransactionsUseCase syncTransactionsUseCase;
@@ -24,12 +28,19 @@ class DataSyncController {
         this.listAvailableSourcesUseCase = listAvailableSourcesUseCase;
     }
 
-    /**
-     * Triggers a full sync from all registered data sources for a customer over the given period.
-     * Transactions are automatically categorised on ingestion.
-     * Idempotent — repeated syncs for the same period overwrite existing records by ID.
-     */
     @PostMapping
+    @Operation(
+            summary = "Sync transactions from all data sources",
+            description = """
+                    Triggers a parallel fetch from all registered data sources for the given customer
+                    and time window. Transactions are automatically categorised on ingestion.
+                    The operation is idempotent — re-syncing the same period overwrites existing records by ID.
+                    """,
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Sync completed"),
+                    @ApiResponse(responseCode = "400", description = "Validation error")
+            }
+    )
     Mono<SyncResponse> sync(@Valid @RequestBody SyncRequest request) {
         var command = new SyncTransactionsCommand(
                 CustomerId.of(request.customerId()),
@@ -39,8 +50,8 @@ class DataSyncController {
         return syncTransactionsUseCase.sync(command).map(SyncResponse::from);
     }
 
-    /** Lists the data source identifiers currently registered with the system. */
     @GetMapping("/sources")
+    @Operation(summary = "List available data sources", description = "Returns the IDs of all registered data source adapters.")
     List<DataSourceId> listSources() {
         return listAvailableSourcesUseCase.listAvailableSources();
     }

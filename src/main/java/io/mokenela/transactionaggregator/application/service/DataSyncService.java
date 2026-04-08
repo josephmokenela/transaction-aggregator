@@ -1,5 +1,6 @@
 package io.mokenela.transactionaggregator.application.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.ListAvailableSourcesUseCase;
 import io.mokenela.transactionaggregator.domain.port.in.SyncTransactionsCommand;
@@ -23,13 +24,16 @@ public class DataSyncService implements SyncTransactionsUseCase, ListAvailableSo
     private final List<FetchTransactionsPort> sources;
     private final SaveTransactionPort saveTransactionPort;
     private final TransactionCategorizationService categorizationService;
+    private final MeterRegistry meterRegistry;
 
     public DataSyncService(List<FetchTransactionsPort> sources,
                            SaveTransactionPort saveTransactionPort,
-                           TransactionCategorizationService categorizationService) {
+                           TransactionCategorizationService categorizationService,
+                           MeterRegistry meterRegistry) {
         this.sources = sources;
         this.saveTransactionPort = saveTransactionPort;
         this.categorizationService = categorizationService;
+        this.meterRegistry = meterRegistry;
         log.info("DataSyncService initialised with {} data source(s): {}", sources.size(),
                 sources.stream().map(s -> s.sourceId().value()).toList());
     }
@@ -52,6 +56,7 @@ public class DataSyncService implements SyncTransactionsUseCase, ListAvailableSo
                     int total = counts.stream().mapToInt(SourceSyncCount::count).sum();
                     log.info("Sync complete for customer={}: {} transaction(s) across {} source(s)",
                             command.customerId().value(), total, counts.size());
+                    meterRegistry.counter("transactions.synced").increment(total);
                     return new SyncResult(
                             command.customerId(),
                             counts.stream().map(SourceSyncCount::sourceId).toList(),
@@ -72,8 +77,12 @@ public class DataSyncService implements SyncTransactionsUseCase, ListAvailableSo
                 .map(Long::intValue)
                 .doOnSuccess(count -> log.debug("Synced {} transaction(s) from source={}",
                         count, source.sourceId().value()))
-                .doOnError(ex -> log.error("Failed to sync from source={}: {}",
-                        source.sourceId().value(), ex.getMessage(), ex));
+                .doOnError(ex -> {
+                    log.error("Failed to sync from source={}: {}",
+                            source.sourceId().value(), ex.getMessage(), ex);
+                    meterRegistry.counter("sync.errors", "source", source.sourceId().value()).increment();
+                })
+                .onErrorReturn(0);
     }
 
     private Transaction applyCategory(Transaction transaction) {

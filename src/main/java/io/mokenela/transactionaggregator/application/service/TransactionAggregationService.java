@@ -1,5 +1,6 @@
 package io.mokenela.transactionaggregator.application.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.domain.exception.TransactionNotFoundException;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
@@ -31,13 +32,16 @@ public class TransactionAggregationService
     private final SaveTransactionPort saveTransactionPort;
     private final LoadTransactionPort loadTransactionPort;
     private final TransactionCategorizationService categorizationService;
+    private final MeterRegistry meterRegistry;
 
     public TransactionAggregationService(SaveTransactionPort saveTransactionPort,
                                          LoadTransactionPort loadTransactionPort,
-                                         TransactionCategorizationService categorizationService) {
+                                         TransactionCategorizationService categorizationService,
+                                         MeterRegistry meterRegistry) {
         this.saveTransactionPort = saveTransactionPort;
         this.loadTransactionPort = loadTransactionPort;
         this.categorizationService = categorizationService;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -59,7 +63,12 @@ public class TransactionAggregationService
         log.debug("Recording transaction for customer={} account={} type={} amount={} category={}",
                 command.customerId().value(), command.accountId().value(),
                 command.type(), command.amount().amount(), category);
-        return saveTransactionPort.save(transaction);
+        return saveTransactionPort.save(transaction)
+                .doOnSuccess(tx -> meterRegistry.counter(
+                        "transactions.recorded",
+                        "type", tx.type().name(),
+                        "category", tx.category().name()
+                ).increment());
     }
 
     @Override

@@ -2,6 +2,10 @@ package io.mokenela.transactionaggregator.adapter.in.web;
 
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +16,7 @@ import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/v1/transactions")
+@Tag(name = "Transactions", description = "Record, retrieve, search, and aggregate transactions")
 class TransactionController {
 
     private final RecordTransactionUseCase recordTransactionUseCase;
@@ -31,6 +36,14 @@ class TransactionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "Record a manual transaction",
+            description = "Creates a new transaction with automatic category assignment based on description and merchant.",
+            responses = {
+                    @ApiResponse(responseCode = "201", description = "Transaction recorded"),
+                    @ApiResponse(responseCode = "400", description = "Validation error")
+            }
+    )
     Mono<TransactionResponse> recordTransaction(@Valid @RequestBody RecordTransactionRequest request) {
         var command = new RecordTransactionCommand(
                 CustomerId.of(request.customerId()),
@@ -44,35 +57,34 @@ class TransactionController {
     }
 
     @GetMapping("/{id}")
+    @Operation(
+            summary = "Get a transaction by ID",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Transaction found"),
+                    @ApiResponse(responseCode = "404", description = "Transaction not found")
+            }
+    )
     Mono<TransactionResponse> getTransaction(@PathVariable String id) {
         return getTransactionUseCase.getTransaction(new GetTransactionQuery(TransactionId.of(id)))
                 .map(TransactionResponse::from);
     }
 
-    /**
-     * Search transactions with flexible filters.
-     *
-     * @param customerId   filter by customer (optional)
-     * @param accountId    filter by account (optional)
-     * @param category     filter by category (optional)
-     * @param type         filter by CREDIT or DEBIT (optional)
-     * @param dataSourceId filter by source (optional)
-     * @param keyword      keyword match on description or merchant name (optional)
-     * @param from         start of date range (optional)
-     * @param to           end of date range (optional)
-     * @param limit        max results, default 50
-     */
     @GetMapping
+    @Operation(
+            summary = "Search transactions",
+            description = "Returns transactions matching the supplied filters. All parameters are optional. " +
+                          "Results are capped by the `limit` parameter (default 50)."
+    )
     Flux<TransactionResponse> search(
-            @RequestParam(required = false) String customerId,
-            @RequestParam(required = false) String accountId,
-            @RequestParam(required = false) TransactionCategory category,
-            @RequestParam(required = false) TransactionType type,
-            @RequestParam(required = false) String dataSourceId,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Instant from,
-            @RequestParam(required = false) Instant to,
-            @RequestParam(defaultValue = "50") int limit) {
+            @Parameter(description = "Filter by customer UUID") @RequestParam(required = false) String customerId,
+            @Parameter(description = "Filter by account UUID") @RequestParam(required = false) String accountId,
+            @Parameter(description = "Filter by category") @RequestParam(required = false) TransactionCategory category,
+            @Parameter(description = "Filter by CREDIT or DEBIT") @RequestParam(required = false) TransactionType type,
+            @Parameter(description = "Filter by data source ID") @RequestParam(required = false) String dataSourceId,
+            @Parameter(description = "Keyword match on description or merchant name") @RequestParam(required = false) String keyword,
+            @Parameter(description = "Range start (ISO-8601)") @RequestParam(required = false) Instant from,
+            @Parameter(description = "Range end (ISO-8601)") @RequestParam(required = false) Instant to,
+            @Parameter(description = "Maximum results to return") @RequestParam(defaultValue = "50") int limit) {
 
         var filter = TransactionFilter.builder()
                 .customerId(customerId != null ? CustomerId.of(customerId) : null)
@@ -90,17 +102,18 @@ class TransactionController {
     }
 
     @GetMapping("/aggregate")
+    @Operation(
+            summary = "Aggregate transactions by period",
+            description = "Groups transactions for an account within the given time window into HOURLY, DAILY, " +
+                          "WEEKLY, MONTHLY, or YEARLY buckets, returning credit/debit totals and net per bucket."
+    )
     Mono<AggregatedTransactionsResponse> aggregate(
-            @RequestParam String accountId,
-            @RequestParam AggregationPeriod period,
-            @RequestParam Instant from,
-            @RequestParam Instant to) {
-        AggregateTransactionsQuery query = new AggregateTransactionsQuery(
-                AccountId.of(accountId),
-                period,
-                from,
-                to
-        );
+            @Parameter(description = "Account UUID", required = true) @RequestParam String accountId,
+            @Parameter(description = "Aggregation granularity", required = true) @RequestParam AggregationPeriod period,
+            @Parameter(description = "Range start (ISO-8601)", required = true) @RequestParam Instant from,
+            @Parameter(description = "Range end (ISO-8601)", required = true) @RequestParam Instant to) {
+
+        var query = new AggregateTransactionsQuery(AccountId.of(accountId), period, from, to);
         return aggregateTransactionsUseCase.aggregate(query).map(AggregatedTransactionsResponse::from);
     }
 }

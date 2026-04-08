@@ -1,5 +1,6 @@
 package io.mokenela.transactionaggregator.application.service;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.mokenela.transactionaggregator.domain.exception.TransactionNotFoundException;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
@@ -35,6 +36,9 @@ class TransactionAggregationServiceTest {
     // Use the real categorisation service — it has no dependencies and is pure logic
     private final TransactionCategorizationService categorizationService = new TransactionCategorizationService();
 
+    // In-memory registry that satisfies the MeterRegistry dependency without any infrastructure
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private TransactionAggregationService service;
 
     private static final CustomerId CUSTOMER_ID = new CustomerId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
@@ -42,7 +46,7 @@ class TransactionAggregationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TransactionAggregationService(saveTransactionPort, loadTransactionPort, categorizationService);
+        service = new TransactionAggregationService(saveTransactionPort, loadTransactionPort, categorizationService, meterRegistry);
     }
 
     // ── recordTransaction ──────────────────────────────────────────────────────
