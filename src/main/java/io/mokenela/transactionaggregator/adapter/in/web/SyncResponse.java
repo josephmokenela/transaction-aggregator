@@ -1,5 +1,6 @@
 package io.mokenela.transactionaggregator.adapter.in.web;
 
+import io.mokenela.transactionaggregator.domain.model.DataSourceId;
 import io.mokenela.transactionaggregator.domain.model.SyncResult;
 
 import java.time.Instant;
@@ -15,7 +16,7 @@ public record SyncResponse(
     static SyncResponse from(SyncResult result) {
         return new SyncResponse(
                 result.customerId().value().toString(),
-                result.syncedSources().stream().map(s -> s.value()).toList(),
+                result.syncedSources().stream().map(DataSourceId::value).toList(),
                 result.totalTransactionsSynced(),
                 result.syncedAt()
         );

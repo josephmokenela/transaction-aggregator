@@ -2,9 +2,10 @@ package io.mokenela.transactionaggregator.adapter.in.web;
 
 import io.mokenela.transactionaggregator.domain.model.CustomerId;
 import io.mokenela.transactionaggregator.domain.model.DataSourceId;
+import io.mokenela.transactionaggregator.domain.port.in.ListAvailableSourcesUseCase;
 import io.mokenela.transactionaggregator.domain.port.in.SyncTransactionsCommand;
 import io.mokenela.transactionaggregator.domain.port.in.SyncTransactionsUseCase;
-import io.mokenela.transactionaggregator.domain.port.out.FetchTransactionsPort;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -15,20 +16,21 @@ import java.util.List;
 class DataSyncController {
 
     private final SyncTransactionsUseCase syncTransactionsUseCase;
-    private final List<FetchTransactionsPort> sources;
+    private final ListAvailableSourcesUseCase listAvailableSourcesUseCase;
 
     DataSyncController(SyncTransactionsUseCase syncTransactionsUseCase,
-                       List<FetchTransactionsPort> sources) {
+                       ListAvailableSourcesUseCase listAvailableSourcesUseCase) {
         this.syncTransactionsUseCase = syncTransactionsUseCase;
-        this.sources = sources;
+        this.listAvailableSourcesUseCase = listAvailableSourcesUseCase;
     }
 
     /**
-     * Trigger a full sync from all data sources for a customer over a given time range.
-     * Transactions are automatically categorized on ingestion.
+     * Triggers a full sync from all registered data sources for a customer over the given period.
+     * Transactions are automatically categorised on ingestion.
+     * Idempotent — repeated syncs for the same period overwrite existing records by ID.
      */
     @PostMapping
-    Mono<SyncResponse> sync(@RequestBody SyncRequest request) {
+    Mono<SyncResponse> sync(@Valid @RequestBody SyncRequest request) {
         var command = new SyncTransactionsCommand(
                 CustomerId.of(request.customerId()),
                 request.from(),
@@ -37,9 +39,9 @@ class DataSyncController {
         return syncTransactionsUseCase.sync(command).map(SyncResponse::from);
     }
 
-    /** List the registered data sources available for sync. */
+    /** Lists the data source identifiers currently registered with the system. */
     @GetMapping("/sources")
     List<DataSourceId> listSources() {
-        return sources.stream().map(FetchTransactionsPort::sourceId).toList();
+        return listAvailableSourcesUseCase.listAvailableSources();
     }
 }

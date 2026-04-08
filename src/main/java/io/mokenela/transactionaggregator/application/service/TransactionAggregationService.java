@@ -1,9 +1,12 @@
 package io.mokenela.transactionaggregator.application.service;
 
+import io.mokenela.transactionaggregator.domain.exception.TransactionNotFoundException;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 public class TransactionAggregationService
         implements RecordTransactionUseCase, AggregateTransactionsUseCase, GetTransactionUseCase, SearchTransactionsUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(TransactionAggregationService.class);
 
     private final SaveTransactionPort saveTransactionPort;
     private final LoadTransactionPort loadTransactionPort;
@@ -51,16 +56,22 @@ public class TransactionAggregationService
                 DataSourceId.MANUAL,
                 Instant.now()
         );
+        log.debug("Recording transaction for customer={} account={} type={} amount={} category={}",
+                command.customerId().value(), command.accountId().value(),
+                command.type(), command.amount().amount(), category);
         return saveTransactionPort.save(transaction);
     }
 
     @Override
     public Mono<Transaction> getTransaction(GetTransactionQuery query) {
-        return loadTransactionPort.loadById(query.transactionId());
+        return loadTransactionPort.loadById(query.transactionId())
+                .switchIfEmpty(Mono.error(new TransactionNotFoundException(query.transactionId())));
     }
 
     @Override
     public Flux<Transaction> search(SearchTransactionsQuery query) {
+        log.debug("Searching transactions with filter: customerId={} category={} keyword={} limit={}",
+                query.filter().customerId(), query.filter().category(), query.filter().keyword(), query.limit());
         return loadTransactionPort
                 .loadByFilter(query.filter())
                 .take(query.limit());
@@ -68,6 +79,8 @@ public class TransactionAggregationService
 
     @Override
     public Mono<AggregatedTransactions> aggregate(AggregateTransactionsQuery query) {
+        log.debug("Aggregating transactions for account={} period={} from={} to={}",
+                query.accountId().value(), query.period(), query.from(), query.to());
         return loadTransactionPort
                 .loadByAccountIdAndPeriod(query.accountId(), query.from(), query.to())
                 .collectList()

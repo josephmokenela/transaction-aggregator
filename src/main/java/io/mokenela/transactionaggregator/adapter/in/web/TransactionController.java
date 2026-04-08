@@ -2,6 +2,7 @@ package io.mokenela.transactionaggregator.adapter.in.web;
 
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -30,7 +31,7 @@ class TransactionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    Mono<TransactionResponse> recordTransaction(@RequestBody RecordTransactionRequest request) {
+    Mono<TransactionResponse> recordTransaction(@Valid @RequestBody RecordTransactionRequest request) {
         var command = new RecordTransactionCommand(
                 CustomerId.of(request.customerId()),
                 AccountId.of(request.accountId()),

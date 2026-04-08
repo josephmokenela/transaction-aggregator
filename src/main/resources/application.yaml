@@ -1,6 +1,11 @@
 spring:
   application:
     name: transaction-aggregator
+  jackson:
+    default-property-inclusion: non_null
+
+app:
+  default-currency: GBP
 
 ---
 spring:
