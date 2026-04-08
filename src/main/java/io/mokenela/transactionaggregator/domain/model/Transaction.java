@@ -4,20 +4,27 @@ import java.time.Instant;
 
 public record Transaction(
         TransactionId id,
+        CustomerId customerId,
         AccountId accountId,
         Money amount,
         TransactionType type,
         TransactionStatus status,
         String description,
+        TransactionCategory category,
+        String merchantName,      // nullable — not all transactions have a merchant
+        DataSourceId dataSourceId,
         Instant occurredAt
 ) {
 
     public Transaction {
         if (id == null) throw new IllegalArgumentException("id cannot be null");
+        if (customerId == null) throw new IllegalArgumentException("customerId cannot be null");
         if (accountId == null) throw new IllegalArgumentException("accountId cannot be null");
         if (amount == null) throw new IllegalArgumentException("amount cannot be null");
         if (type == null) throw new IllegalArgumentException("type cannot be null");
         if (status == null) throw new IllegalArgumentException("status cannot be null");
+        if (category == null) throw new IllegalArgumentException("category cannot be null");
+        if (dataSourceId == null) throw new IllegalArgumentException("dataSourceId cannot be null");
         if (occurredAt == null) throw new IllegalArgumentException("occurredAt cannot be null");
     }
 

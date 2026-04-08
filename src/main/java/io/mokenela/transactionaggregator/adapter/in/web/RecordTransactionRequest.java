@@ -5,9 +5,11 @@ import io.mokenela.transactionaggregator.domain.model.TransactionType;
 import java.math.BigDecimal;
 
 public record RecordTransactionRequest(
+        String customerId,
         String accountId,
         BigDecimal amount,
         String currency,
         TransactionType type,
-        String description
+        String description,
+        String merchantName   // optional
 ) {}
