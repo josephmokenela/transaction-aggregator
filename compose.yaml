@@ -1,1 +1,14 @@
-services: { }
+services:
+  transaction-aggregator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: transaction-aggregator:latest
+    container_name: transaction-aggregator
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # Disable the dev-time Docker Compose integration when running inside a container
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+    restart: unless-stopped

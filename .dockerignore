@@ -1,0 +1,10 @@
+target/
+.git/
+.gitignore
+.gitattributes
+.idea/
+*.iml
+*.ipr
+*.iws
+compose.yaml
+HELP.md
