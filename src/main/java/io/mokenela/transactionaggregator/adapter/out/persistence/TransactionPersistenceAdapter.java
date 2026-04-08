@@ -1,8 +1,6 @@
 package io.mokenela.transactionaggregator.adapter.out.persistence;
 
-import io.mokenela.transactionaggregator.domain.model.AccountId;
-import io.mokenela.transactionaggregator.domain.model.Transaction;
-import io.mokenela.transactionaggregator.domain.model.TransactionId;
+import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
 import org.springframework.stereotype.Component;
@@ -39,5 +37,10 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     @Override
     public Flux<Transaction> loadByAccountIdAndPeriod(AccountId accountId, Instant from, Instant to) {
         return Flux.fromStream(() -> repository.findByAccountIdAndPeriod(accountId, from, to));
+    }
+
+    @Override
+    public Flux<Transaction> loadByFilter(TransactionFilter filter) {
+        return Flux.fromStream(() -> repository.findByFilter(filter));
     }
 }
