@@ -1,0 +1,6 @@
+spring:
+  flyway:
+    enabled: false   # managed manually in H2DevConfig to control init ordering
+  docker:
+    compose:
+      enabled: false

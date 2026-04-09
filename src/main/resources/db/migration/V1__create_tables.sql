@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS transactions
     category       VARCHAR(30)  NOT NULL,
     merchant_name  TEXT,
     data_source_id VARCHAR(50)  NOT NULL,
-    occurred_at    TIMESTAMPTZ  NOT NULL
+    occurred_at    TIMESTAMP WITH TIME ZONE  NOT NULL
 );
 
 -- Covering indexes for the query patterns used by LoadTransactionPort
