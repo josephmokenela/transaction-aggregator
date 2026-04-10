@@ -124,6 +124,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ── Kafka ─────────────────────────────────────────────────────────── -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- ── Dev (H2 in-memory, no Docker needed) ────────────────────────── -->
         <dependency>
             <groupId>io.r2dbc</groupId>
