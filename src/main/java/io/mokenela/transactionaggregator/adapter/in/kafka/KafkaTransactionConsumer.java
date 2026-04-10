@@ -39,14 +39,19 @@ class KafkaTransactionConsumer {
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void consume(List<KafkaTransactionEvent> events) {
-        log.debug("Received batch of {} transaction event(s) from Kafka", events.size());
+        log.info("Received batch of {} transaction event(s) from Kafka", events.size());
 
         Flux.fromIterable(events)
                 .map(this::toDomain)
-                .flatMap(saveTransactionPort::save, 16) // concurrency of 16 parallel saves
-                .doOnComplete(() -> log.debug("Batch of {} persisted", events.size()))
-                .doOnError(ex -> log.error("Failed to persist Kafka batch: {}", ex.getMessage(), ex))
-                .subscribe();
+                .onErrorContinue((ex, obj) -> log.error("Failed to map event to domain, skipping: {}", ex.getMessage(), ex))
+                .flatMap(t -> saveTransactionPort.save(t)
+                        .doOnError(ex -> log.error("Failed to save transaction id={}: {}", t.id().value(), ex.getMessage(), ex))
+                        .onErrorResume(ex -> reactor.core.publisher.Mono.empty()), 16)
+                .doOnComplete(() -> log.info("Batch of {} event(s) processed", events.size()))
+                .subscribe(
+                        t -> {},
+                        ex -> log.error("Fatal error in Kafka consumer pipeline", ex)
+                );
     }
 
     private Transaction toDomain(KafkaTransactionEvent event) {
