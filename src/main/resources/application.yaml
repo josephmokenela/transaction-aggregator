@@ -4,18 +4,17 @@ spring:
   jackson:
     default-property-inclusion: non_null
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transaction_aggregator}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
   datasource:
     # Blocking JDBC DataSource used exclusively by Flyway at startup
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transaction_aggregator}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
   flyway:
-    enabled: true
-    locations: classpath:db/migration
+    enabled: false   # managed explicitly in PostgresConfig / H2DevConfig to control init ordering
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -34,6 +33,12 @@ app:
   kafka:
     enabled: ${APP_KAFKA_ENABLED:false}
     topic: transactions
+  plaid:
+    enabled: ${APP_PLAID_ENABLED:false}
+    client-id: ${PLAID_CLIENT_ID:}
+    secret: ${PLAID_SECRET:}
+    base-url: https://sandbox.plaid.com
+    institution-id: ins_109508
 
 
 management:

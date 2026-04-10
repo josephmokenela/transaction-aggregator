@@ -1,5 +1,18 @@
 services:
 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: transaction-aggregator-kafka-ui
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
   kafka:
     image: apache/kafka:3.7.0
     container_name: transaction-aggregator-kafka
@@ -33,7 +46,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -66,6 +79,10 @@ services:
       DB_PASSWORD: postgres
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       APP_KAFKA_ENABLED: "true"
+      # Plaid sandbox — set these on the host before running docker compose
+      PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
+      PLAID_SECRET: ${PLAID_SECRET:-}
+      APP_PLAID_ENABLED: ${APP_PLAID_ENABLED:-false}
     restart: unless-stopped
 
 volumes:
