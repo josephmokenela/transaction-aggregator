@@ -16,14 +16,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-
-app:
-  default-currency: GBP
-  kafka:
-    enabled: ${APP_KAFKA_ENABLED:false}
-    topic: transactions
-
-spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -36,6 +28,13 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "io.mokenela.transactionaggregator.*"
+
+app:
+  default-currency: GBP
+  kafka:
+    enabled: ${APP_KAFKA_ENABLED:false}
+    topic: transactions
+
 
 management:
   endpoints:
