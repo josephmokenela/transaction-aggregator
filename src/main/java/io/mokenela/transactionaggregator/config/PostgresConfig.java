@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.config;
 
+import io.r2dbc.pool.ConnectionPool;
+import io.r2dbc.pool.ConnectionPoolConfiguration;
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
@@ -12,6 +14,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 
 import javax.sql.DataSource;
+import java.time.Duration;
 
 /**
  * Explicit database wiring for non-dev profiles.
@@ -61,11 +64,19 @@ class PostgresConfig {
     @Bean
     @Primary
     ConnectionFactory connectionFactory(Flyway flyway) {
-        return ConnectionFactories.get(
-                ConnectionFactoryOptions.parse(r2dbcUrl)
-                        .mutate()
-                        .option(ConnectionFactoryOptions.USER, username)
-                        .option(ConnectionFactoryOptions.PASSWORD, password)
-                        .build());
+        var options = ConnectionFactoryOptions.parse(r2dbcUrl)
+                .mutate()
+                .option(ConnectionFactoryOptions.USER, username)
+                .option(ConnectionFactoryOptions.PASSWORD, password)
+                .build();
+
+        var poolConfig = ConnectionPoolConfiguration.builder(ConnectionFactories.get(options))
+                .initialSize(5)
+                .maxSize(20)
+                .maxIdleTime(Duration.ofMinutes(10))
+                .maxAcquireTime(Duration.ofSeconds(10))
+                .build();
+
+        return new ConnectionPool(poolConfig);
     }
 }

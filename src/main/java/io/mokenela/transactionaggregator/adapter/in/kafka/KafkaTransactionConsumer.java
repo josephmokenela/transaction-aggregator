@@ -9,7 +9,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -45,8 +47,11 @@ class KafkaTransactionConsumer {
                 .map(this::toDomain)
                 .onErrorContinue((ex, obj) -> log.error("Failed to map event to domain, skipping: {}", ex.getMessage(), ex))
                 .flatMap(t -> saveTransactionPort.save(t)
-                        .doOnError(ex -> log.error("Failed to save transaction id={}: {}", t.id().value(), ex.getMessage(), ex))
-                        .onErrorResume(ex -> reactor.core.publisher.Mono.empty()), 16)
+                        .retryWhen(Retry.backoff(3, Duration.ofMillis(200))
+                                .filter(ex -> ex.getMessage() != null && ex.getMessage().contains("R2DBC Connection"))
+                                .doBeforeRetry(sig -> log.warn("Retrying save for id={} (attempt {})", t.id().value(), sig.totalRetriesInARow() + 1)))
+                        .doOnError(ex -> log.error("Failed to save transaction id={}: {}", t.id().value(), ex.getMessage()))
+                        .onErrorResume(ex -> reactor.core.publisher.Mono.empty()), 8)
                 .doOnComplete(() -> log.info("Batch of {} event(s) processed", events.size()))
                 .subscribe(
                         t -> {},
