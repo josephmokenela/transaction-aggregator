@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transaction-aggregator-config
+  namespace: transaction-aggregator
+data:
+  SPRING_PROFILES_ACTIVE: docker
+  SPRING_DOCKER_COMPOSE_ENABLED: "false"
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: transaction_aggregator
+  DB_USERNAME: postgres
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+  APP_KAFKA_ENABLED: "true"
+  APP_PLAID_ENABLED: "false"

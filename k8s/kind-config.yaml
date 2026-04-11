@@ -1,0 +1,20 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: transaction-aggregator
+nodes:
+  - role: control-plane
+    # Map Kind node ports (NodePort range) to host machine ports so services
+    # are reachable from localhost exactly as they are with Docker Compose.
+    extraPortMappings:
+      - containerPort: 30080   # app
+        hostPort: 8080
+      - containerPort: 30200   # vault
+        hostPort: 8200
+      - containerPort: 30920   # kafka (external)
+        hostPort: 9092
+      - containerPort: 30890   # kafka-ui
+        hostPort: 8090
+      - containerPort: 30900   # prometheus
+        hostPort: 9090
+      - containerPort: 30300   # grafana
+        hostPort: 3000

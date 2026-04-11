@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-aggregator
+  namespace: transaction-aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transaction-aggregator
+  template:
+    metadata:
+      labels:
+        app: transaction-aggregator
+      annotations:
+        # Prometheus scrape annotations — works alongside the static scrape config
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      initContainers:
+        # Ensure PostgreSQL is accepting connections before the app starts
+        - name: wait-for-postgres
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U postgres; do echo "Waiting for PostgreSQL..."; sleep 3; done
+
+        # Ensure Kafka broker is up before the app starts
+        - name: wait-for-kafka
+          image: apache/kafka:3.7.0
+          command:
+            - sh
+            - -c
+            - |
+              until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9093 --list; do
+                echo "Waiting for Kafka..."; sleep 5
+              done
+
+        # Ensure Vault secrets have been seeded before Spring Cloud Vault reads them
+        - name: wait-for-vault
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://vault:8200/v1/secret/data/transaction-aggregator \
+                -H "X-Vault-Token: root" | grep -q vault.db.password; do
+                echo "Waiting for Vault secrets..."; sleep 3
+              done
+
+      containers:
+        - name: transaction-aggregator
+          image: transaction-aggregator:latest
+          # Use IfNotPresent so Kind uses the locally loaded image (not Docker Hub)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: transaction-aggregator-config
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

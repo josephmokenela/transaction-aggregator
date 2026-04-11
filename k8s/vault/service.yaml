@@ -1,0 +1,30 @@
+---
+# Internal service — used by the app inside the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: transaction-aggregator
+spec:
+  selector:
+    app: vault
+  ports:
+    - port: 8200
+      targetPort: 8200
+  type: ClusterIP
+
+---
+# External service — exposes Vault UI/API to the host machine
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-external
+  namespace: transaction-aggregator
+spec:
+  selector:
+    app: vault
+  ports:
+    - port: 8200
+      targetPort: 8200
+      nodePort: 30200
+  type: NodePort

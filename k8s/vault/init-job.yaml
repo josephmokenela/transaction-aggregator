@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init
+  namespace: transaction-aggregator
+spec:
+  # Never restart — if it fails, investigate rather than loop forever
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for Vault to be ready before seeding secrets
+        - name: wait-for-vault
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://vault:8200/v1/sys/health; do
+                echo "Waiting for Vault..."; sleep 3
+              done
+      containers:
+        - name: vault-init
+          image: hashicorp/vault:1.17
+          env:
+            - name: VAULT_ADDR
+              value: http://vault:8200
+            - name: VAULT_TOKEN
+              value: root
+            - name: PLAID_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-credentials
+                  key: client-id
+                  optional: true
+            - name: PLAID_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-credentials
+                  key: secret
+                  optional: true
+          command:
+            - sh
+            - -c
+            - |
+              vault kv put secret/transaction-aggregator \
+                vault.db.password=postgres \
+                vault.plaid.client-id=${PLAID_CLIENT_ID:-placeholder} \
+                vault.plaid.secret=${PLAID_SECRET:-placeholder} &&
+              echo "Vault secrets seeded."
