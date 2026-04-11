@@ -107,6 +107,8 @@ services:
         condition: service_healthy
       vault-init:
         condition: service_completed_successfully
+      zipkin:
+        condition: service_started
     ports:
       - "8080:8080"
     environment:
@@ -119,7 +121,15 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       APP_KAFKA_ENABLED: "true"
       APP_PLAID_ENABLED: ${APP_PLAID_ENABLED:-false}
+      ZIPKIN_HOST: zipkin
       # DB_PASSWORD and Plaid credentials are sourced from Vault at startup
+    restart: unless-stopped
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: transaction-aggregator-zipkin
+    ports:
+      - "9411:9411"
     restart: unless-stopped
 
   prometheus:

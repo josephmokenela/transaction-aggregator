@@ -7,13 +7,17 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
+@Validated
 @RestController
 @RequestMapping("/api/v1/transactions")
 @Tag(name = "Transactions", description = "Record, retrieve, search, and aggregate transactions")
@@ -84,7 +88,7 @@ class TransactionController {
             @Parameter(description = "Keyword match on description or merchant name") @RequestParam(required = false) String keyword,
             @Parameter(description = "Range start (ISO-8601)") @RequestParam(required = false) Instant from,
             @Parameter(description = "Range end (ISO-8601)") @RequestParam(required = false) Instant to,
-            @Parameter(description = "Maximum results to return") @RequestParam(defaultValue = "50") int limit) {
+            @Parameter(description = "Maximum results to return (1–1000)") @RequestParam(defaultValue = "50") @Min(1) @Max(1000) int limit) {
 
         var filter = TransactionFilter.builder()
                 .customerId(customerId != null ? CustomerId.of(customerId) : null)

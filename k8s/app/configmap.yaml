@@ -13,3 +13,4 @@ data:
   KAFKA_BOOTSTRAP_SERVERS: kafka:9093
   APP_KAFKA_ENABLED: "true"
   APP_PLAID_ENABLED: "false"
+  ZIPKIN_HOST: zipkin

@@ -51,8 +51,10 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     @Override
     public Mono<Transaction> save(Transaction transaction) {
         var e = mapper.toEntity(transaction);
-        var timer = meterRegistry.timer("transactions.save.duration",
-                "source", transaction.dataSourceId().value());
+        var timer = io.micrometer.core.instrument.Timer.builder("transactions.save.duration")
+                .tag("source", transaction.dataSourceId().value())
+                .publishPercentileHistogram()
+                .register(meterRegistry);
         var sample = io.micrometer.core.instrument.Timer.start(meterRegistry);
 
         // Ensure the account exists before inserting the transaction (FK constraint)

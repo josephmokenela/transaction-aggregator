@@ -66,6 +66,11 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
                 .slidingWindowSize(10)
                 .ignoreExceptions(PlaidClient.ProductNotReadyException.class)
                 .build());
+        // Pre-register a counter for every possible state so the metric exists in
+        // Prometheus from startup, not only after the first transition fires.
+        for (var state : CircuitBreaker.State.values()) {
+            meterRegistry.counter("plaid.circuit.transitions", "to", state.name());
+        }
         this.circuitBreaker.getEventPublisher()
                 .onStateTransition(e -> {
                     log.warn("Plaid circuit breaker state: {} -> {}",
@@ -127,7 +132,9 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
                                                              LocalDate from, LocalDate to) {
         record PageState(List<PlaidClient.PlaidTransaction> transactions, int nextOffset, int total) {}
 
-        var timer = meterRegistry.timer("plaid.fetch.duration");
+        var timer = io.micrometer.core.instrument.Timer.builder("plaid.fetch.duration")
+                .publishPercentileHistogram()
+                .register(meterRegistry);
         var sample = io.micrometer.core.instrument.Timer.start(meterRegistry);
 
         return plaidClient.getTransactions(accessToken, from, to, PAGE_SIZE, 0)

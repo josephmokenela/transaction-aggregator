@@ -63,7 +63,7 @@ class PostgresConfig {
 
     @Bean
     @Primary
-    ConnectionFactory connectionFactory(Flyway flyway) {
+    ConnectionPool connectionFactory(Flyway flyway) {
         var options = ConnectionFactoryOptions.parse(r2dbcUrl)
                 .mutate()
                 .option(ConnectionFactoryOptions.USER, username)
