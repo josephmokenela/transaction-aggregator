@@ -82,8 +82,7 @@ public class TransactionAggregationService
         log.debug("Searching transactions with filter: customerId={} category={} keyword={} limit={}",
                 query.filter().customerId(), query.filter().category(), query.filter().keyword(), query.limit());
         return loadTransactionPort
-                .loadByFilter(query.filter())
-                .take(query.limit());
+                .loadByFilter(query.filter(), query.limit());
     }
 
     @Override

@@ -56,7 +56,7 @@ public class CustomerQueryService
 
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMap(customer -> loadTransactionPort.loadByFilter(filter)
+                .flatMap(customer -> loadTransactionPort.loadByFilter(filter, 10_000)
                         .collectList()
                         .map(transactions -> buildCustomerSummary(customer, query, transactions)));
     }
@@ -75,7 +75,7 @@ public class CustomerQueryService
         // Verify the customer exists before computing the summary
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMapMany(ignored -> loadTransactionPort.loadByFilter(filter)
+                .flatMapMany(ignored -> loadTransactionPort.loadByFilter(filter, 10_000)
                         .collectList()
                         .flatMapIterable(this::buildCategorySummaries));
     }

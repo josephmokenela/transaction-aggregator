@@ -67,7 +67,9 @@ class KafkaTopicConfig {
                 Map.of(
                         ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                         ConsumerConfig.GROUP_ID_CONFIG, "transaction-aggregator",
-                        ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"
+                        ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                        ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "250",
+                        ConsumerConfig.FETCH_MAX_BYTES_CONFIG, String.valueOf(5 * 1024 * 1024)  // 5 MB
                 ),
                 new StringDeserializer(),
                 deserializer
@@ -80,6 +82,7 @@ class KafkaTopicConfig {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, KafkaTransactionEvent>();
         factory.setConsumerFactory(consumerFactory);
         factory.setBatchListener(true);
+        factory.setConcurrency(6);  // one thread per partition
         return factory;
     }
 }

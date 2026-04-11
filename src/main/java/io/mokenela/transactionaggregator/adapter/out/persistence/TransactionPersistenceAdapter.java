@@ -3,7 +3,6 @@ package io.mokenela.transactionaggregator.adapter.out.persistence;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
 import org.springframework.data.relational.core.query.Query;
@@ -40,14 +39,13 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
 
     @Override
     public Mono<Transaction> save(Transaction transaction) {
-        var entity = mapper.toEntity(transaction);
-        // upsert: insert new or overwrite on PK conflict (idempotent sync re-runs)
-        return template.insert(entity)
-                .onErrorResume(DataIntegrityViolationException.class, ex ->
-                        template.update(entity)
-                                .switchIfEmpty(Mono.error(new IllegalStateException(
-                                        "Upsert failed: transaction " + entity.getId() + " could not be inserted or updated"))))
-                .map(mapper::toDomain);
+        var e = mapper.toEntity(transaction);
+        return repository.upsert(
+                e.getId(), e.getCustomerId(), e.getAccountId(),
+                e.getAmount(), e.getCurrencyCode(), e.getType(), e.getStatus(),
+                e.getDescription(), e.getCategory(), e.getMerchantName(),
+                e.getDataSourceId(), e.getOccurredAt()
+        ).map(mapper::toDomain);
     }
 
     @Override
@@ -65,10 +63,15 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
         return repository.findByAccountIdAndPeriod(accountId.value(), from, to).map(mapper::toDomain);
     }
 
+    private static final int MAX_LIMIT = 1000;
+
     @Override
-    public Flux<Transaction> loadByFilter(TransactionFilter filter) {
-        return template.select(Query.query(buildCriteria(filter)), TransactionEntity.class)
-                .map(mapper::toDomain);
+    public Flux<Transaction> loadByFilter(TransactionFilter filter, int limit) {
+        int effectiveLimit = Math.min(limit, MAX_LIMIT);
+        return template.select(
+                Query.query(buildCriteria(filter)).limit(effectiveLimit),
+                TransactionEntity.class
+        ).map(mapper::toDomain);
     }
 
     // ── private helpers ────────────────────────────────────────────────────────

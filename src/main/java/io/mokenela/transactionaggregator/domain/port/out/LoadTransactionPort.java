@@ -13,5 +13,5 @@ public interface LoadTransactionPort {
     Mono<Transaction> loadById(TransactionId transactionId);
     Flux<Transaction> loadByAccountId(AccountId accountId);
     Flux<Transaction> loadByAccountIdAndPeriod(AccountId accountId, Instant from, Instant to);
-    Flux<Transaction> loadByFilter(TransactionFilter filter);
+    Flux<Transaction> loadByFilter(TransactionFilter filter, int limit);
 }
