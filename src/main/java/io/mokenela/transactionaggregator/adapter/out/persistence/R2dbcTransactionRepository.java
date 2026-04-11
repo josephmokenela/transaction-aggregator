@@ -17,7 +17,15 @@ import java.util.UUID;
  */
 interface R2dbcTransactionRepository extends ReactiveCrudRepository<TransactionEntity, UUID> {
 
-    Flux<TransactionEntity> findByAccountId(UUID accountId);
+    @Query("""
+            SELECT * FROM transactions
+            WHERE account_id = :accountId
+            ORDER BY occurred_at DESC
+            LIMIT :limit
+            """)
+    Flux<TransactionEntity> findByAccountId(
+            @Param("accountId") UUID accountId,
+            @Param("limit") int limit);
 
     @Query("""
             SELECT * FROM transactions
@@ -25,11 +33,13 @@ interface R2dbcTransactionRepository extends ReactiveCrudRepository<TransactionE
               AND occurred_at >= :from
               AND occurred_at <= :to
             ORDER BY occurred_at
+            LIMIT :limit
             """)
     Flux<TransactionEntity> findByAccountIdAndPeriod(
             @Param("accountId") UUID accountId,
             @Param("from") Instant from,
-            @Param("to") Instant to);
+            @Param("to") Instant to,
+            @Param("limit") int limit);
 
     @Query("""
             INSERT INTO transactions (

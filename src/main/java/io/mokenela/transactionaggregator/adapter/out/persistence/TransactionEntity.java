@@ -37,4 +37,6 @@ class TransactionEntity {
     private String merchantName;
     private String dataSourceId;
     private Instant occurredAt;
+    private Instant createdAt;
+    private Instant updatedAt;
 }

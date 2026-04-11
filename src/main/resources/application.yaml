@@ -6,12 +6,12 @@ spring:
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    password: ${vault.db.password:${DB_PASSWORD:postgres}}
   datasource:
     # Blocking JDBC DataSource used exclusively by Flyway at startup
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    password: ${vault.db.password:${DB_PASSWORD:postgres}}
     driver-class-name: org.postgresql.Driver
   flyway:
     enabled: false   # managed explicitly in PostgresConfig / H2DevConfig to control init ordering
@@ -35,8 +35,8 @@ app:
     topic: transactions
   plaid:
     enabled: ${APP_PLAID_ENABLED:false}
-    client-id: ${PLAID_CLIENT_ID:}
-    secret: ${PLAID_SECRET:}
+    client-id: ${vault.plaid.client-id:${PLAID_CLIENT_ID:}}
+    secret: ${vault.plaid.secret:${PLAID_SECRET:}}
     base-url: https://sandbox.plaid.com
     institution-id: ins_109508
 
@@ -72,3 +72,4 @@ spring:
   docker:
     compose:
       enabled: false
+  # Vault is enabled in docker via VAULT_ENABLED=true (see VaultEnvironmentPostProcessor)

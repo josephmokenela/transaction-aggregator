@@ -1,5 +1,43 @@
 services:
 
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: transaction-aggregator-vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  vault-init:
+    image: hashicorp/vault:1.17
+    container_name: transaction-aggregator-vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+      PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-placeholder}
+      PLAID_SECRET: ${PLAID_SECRET:-placeholder}
+    entrypoint: sh -c
+    command:
+      - |
+        vault kv put secret/transaction-aggregator \
+          db.password=postgres \
+          plaid.client-id=$$PLAID_CLIENT_ID \
+          plaid.secret=$$PLAID_SECRET &&
+        echo 'Vault secrets seeded.'
+    restart: "no"
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: transaction-aggregator-kafka-ui
@@ -67,6 +105,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
@@ -76,13 +116,14 @@ services:
       DB_PORT: 5432
       DB_NAME: transaction_aggregator
       DB_USERNAME: postgres
-      DB_PASSWORD: postgres
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       APP_KAFKA_ENABLED: "true"
-      # Plaid sandbox — set these on the host before running docker compose
-      PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
-      PLAID_SECRET: ${PLAID_SECRET:-}
       APP_PLAID_ENABLED: ${APP_PLAID_ENABLED:-false}
+      # Vault — secrets are fetched at startup by VaultEnvironmentPostProcessor
+      VAULT_ENABLED: "true"
+      VAULT_URI: http://vault:8200
+      VAULT_TOKEN: root
+      VAULT_PATH: transaction-aggregator
     restart: unless-stopped
 
   prometheus:
@@ -123,3 +164,4 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  vault_data:
