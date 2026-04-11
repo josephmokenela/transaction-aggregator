@@ -32,9 +32,9 @@ services:
     command:
       - |
         vault kv put secret/transaction-aggregator \
-          db.password=postgres \
-          plaid.client-id=$$PLAID_CLIENT_ID \
-          plaid.secret=$$PLAID_SECRET &&
+          vault.db.password=postgres \
+          vault.plaid.client-id=$$PLAID_CLIENT_ID \
+          vault.plaid.secret=$$PLAID_SECRET &&
         echo 'Vault secrets seeded.'
     restart: "no"
 
@@ -119,11 +119,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9093
       APP_KAFKA_ENABLED: "true"
       APP_PLAID_ENABLED: ${APP_PLAID_ENABLED:-false}
-      # Vault — secrets are fetched at startup by VaultEnvironmentPostProcessor
-      VAULT_ENABLED: "true"
-      VAULT_URI: http://vault:8200
-      VAULT_TOKEN: root
-      VAULT_PATH: transaction-aggregator
+      # DB_PASSWORD and Plaid credentials are sourced from Vault at startup
     restart: unless-stopped
 
   prometheus:

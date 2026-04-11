@@ -3,6 +3,19 @@ spring:
     name: transaction-aggregator
   jackson:
     default-property-inclusion: non_null
+  config:
+    import: "optional:vault://"
+  cloud:
+    vault:
+      enabled: false   # enabled explicitly in docker profile
+      host: localhost
+      port: 8200
+      scheme: http
+      authentication: TOKEN
+      token: root
+      kv:
+        enabled: true
+        default-context: transaction-aggregator
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
@@ -72,4 +85,8 @@ spring:
   docker:
     compose:
       enabled: false
-  # Vault is enabled in docker via VAULT_ENABLED=true (see VaultEnvironmentPostProcessor)
+  cloud:
+    vault:
+      enabled: true
+      host: vault
+      port: 8200

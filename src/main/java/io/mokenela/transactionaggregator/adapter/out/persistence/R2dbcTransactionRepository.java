@@ -46,8 +46,9 @@ interface R2dbcTransactionRepository extends ReactiveCrudRepository<TransactionE
                 id, customer_id, account_id, amount, currency_code, type, status,
                 description, category, merchant_name, data_source_id, occurred_at
             ) VALUES (
-                :id, :customerId, :accountId, :amount, :currencyCode, :type, :status,
-                :description, :category, :merchantName, :dataSourceId, :occurredAt
+                :id, :customerId, :accountId, :amount, :currencyCode,
+                :type::transaction_type, :status::transaction_status,
+                :description, :category::transaction_category, :merchantName, :dataSourceId, :occurredAt
             )
             ON CONFLICT (id) DO UPDATE SET
                 status         = EXCLUDED.status,
