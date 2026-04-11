@@ -1,5 +1,6 @@
 package io.mokenela.transactionaggregator.adapter.out.persistence;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
@@ -28,24 +29,37 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     private final R2dbcTransactionRepository repository;
     private final R2dbcEntityTemplate template;
     private final TransactionEntityMapper mapper;
+    private final MeterRegistry meterRegistry;
 
     TransactionPersistenceAdapter(R2dbcTransactionRepository repository,
                                   R2dbcEntityTemplate template,
-                                  TransactionEntityMapper mapper) {
+                                  TransactionEntityMapper mapper,
+                                  MeterRegistry meterRegistry) {
         this.repository = repository;
         this.template = template;
         this.mapper = mapper;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
     public Mono<Transaction> save(Transaction transaction) {
         var e = mapper.toEntity(transaction);
+        var timer = meterRegistry.timer("transactions.save.duration",
+                "source", transaction.dataSourceId().value());
+        var sample = io.micrometer.core.instrument.Timer.start(meterRegistry);
         return repository.upsert(
                 e.getId(), e.getCustomerId(), e.getAccountId(),
                 e.getAmount(), e.getCurrencyCode(), e.getType(), e.getStatus(),
                 e.getDescription(), e.getCategory(), e.getMerchantName(),
                 e.getDataSourceId(), e.getOccurredAt()
-        ).map(mapper::toDomain);
+        )
+        .doOnSuccess(saved -> {
+            sample.stop(timer);
+            meterRegistry.counter("transactions.saves",
+                    "source", transaction.dataSourceId().value()).increment();
+        })
+        .doOnError(ex -> sample.stop(timer))
+        .map(mapper::toDomain);
     }
 
     @Override

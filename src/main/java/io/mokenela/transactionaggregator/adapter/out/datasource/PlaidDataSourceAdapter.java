@@ -1,5 +1,9 @@
 package io.mokenela.transactionaggregator.adapter.out.datasource;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.FetchTransactionsPort;
 import org.slf4j.Logger;
@@ -39,12 +43,37 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
     private static final Logger log = LoggerFactory.getLogger(PlaidDataSourceAdapter.class);
     private static final DataSourceId SOURCE_ID = DataSourceId.PLAID;
     private static final int PAGE_SIZE = 500;
+    private static final Duration TOKEN_TTL = Duration.ofHours(23);
+
+    private record TokenEntry(String token, Instant cachedAt) {
+        boolean isExpired() { return Instant.now().isAfter(cachedAt.plus(TOKEN_TTL)); }
+    }
 
     private final PlaidClient plaidClient;
-    private final AtomicReference<String> accessTokenCache = new AtomicReference<>();
+    private final MeterRegistry meterRegistry;
+    private final AtomicReference<TokenEntry> tokenCache = new AtomicReference<>();
+    private final CircuitBreaker circuitBreaker;
 
-    PlaidDataSourceAdapter(PlaidClient plaidClient) {
+    PlaidDataSourceAdapter(PlaidClient plaidClient, MeterRegistry meterRegistry) {
         this.plaidClient = plaidClient;
+        this.meterRegistry = meterRegistry;
+        this.circuitBreaker = CircuitBreaker.of("plaid", CircuitBreakerConfig.custom()
+                .failureRateThreshold(50)
+                .slowCallRateThreshold(80)
+                .slowCallDurationThreshold(Duration.ofSeconds(8))
+                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .permittedNumberOfCallsInHalfOpenState(3)
+                .slidingWindowSize(10)
+                .ignoreExceptions(PlaidClient.ProductNotReadyException.class)
+                .build());
+        this.circuitBreaker.getEventPublisher()
+                .onStateTransition(e -> {
+                    log.warn("Plaid circuit breaker state: {} -> {}",
+                            e.getStateTransition().getFromState(),
+                            e.getStateTransition().getToState());
+                    meterRegistry.counter("plaid.circuit.transitions",
+                            "to", e.getStateTransition().getToState().name()).increment();
+                });
     }
 
     @Override
@@ -58,7 +87,14 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
         var toDate = to.atZone(ZoneOffset.UTC).toLocalDate();
 
         return getAccessToken()
-                .flatMapMany(token -> fetchAllPages(token, fromDate, toDate))
+                .flatMapMany(token -> fetchAllPages(token, fromDate, toDate)
+                        .onErrorResume(PlaidClient.InvalidAccessTokenException.class, ex -> {
+                            log.warn("Plaid access token invalidated — clearing cache and retrying");
+                            tokenCache.set(null);
+                            meterRegistry.counter("plaid.token.evictions").increment();
+                            return getAccessToken()
+                                    .flatMapMany(freshToken -> fetchAllPages(freshToken, fromDate, toDate));
+                        }))
                 .map(t -> toDomain(t, customerId))
                 .doOnError(ex -> log.error("Plaid fetch failed: {}", ex.getMessage(), ex));
     }
@@ -66,13 +102,16 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private Mono<String> getAccessToken() {
-        var cached = accessTokenCache.get();
-        if (cached != null) return Mono.just(cached);
+        var cached = tokenCache.get();
+        if (cached != null && !cached.isExpired()) return Mono.just(cached.token());
+
+        if (cached != null) log.info("Plaid access token expired after {} hours — refreshing", TOKEN_TTL.toHours());
 
         return plaidClient.createSandboxPublicToken()
                 .flatMap(plaidClient::exchangePublicToken)
                 .flatMap(token -> {
-                    accessTokenCache.set(token);
+                    tokenCache.set(new TokenEntry(token, Instant.now()));
+                    meterRegistry.counter("plaid.token.refreshes").increment();
                     log.info("Plaid sandbox access token obtained and cached — requesting transaction refresh");
                     return plaidClient.refreshTransactions(token)
                             .doOnSuccess(v -> log.info("Plaid transaction refresh requested"))
@@ -88,15 +127,22 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
                                                              LocalDate from, LocalDate to) {
         record PageState(List<PlaidClient.PlaidTransaction> transactions, int nextOffset, int total) {}
 
+        var timer = meterRegistry.timer("plaid.fetch.duration");
+        var sample = io.micrometer.core.instrument.Timer.start(meterRegistry);
+
         return plaidClient.getTransactions(accessToken, from, to, PAGE_SIZE, 0)
-                .retryWhen(reactor.util.retry.Retry.backoff(5, Duration.ofSeconds(3))
-                        .filter(ex -> ex instanceof PlaidClient.ProductNotReadyException)
-                        .doBeforeRetry(sig -> log.info("Plaid PRODUCT_NOT_READY — retrying in ~{}s (attempt {})",
-                                3 * (1 << sig.totalRetriesInARow()), sig.totalRetriesInARow() + 1)))
+                        .retryWhen(reactor.util.retry.Retry.backoff(5, Duration.ofSeconds(3))
+                                .filter(ex -> ex instanceof PlaidClient.ProductNotReadyException)
+                                .doBeforeRetry(sig -> log.info("Plaid PRODUCT_NOT_READY — retrying (attempt {})",
+                                        sig.totalRetriesInARow() + 1)))
+                        .doOnSuccess(p -> sample.stop(timer))
+                        .doOnError(ex -> sample.stop(timer))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                 .map(page -> new PageState(page.transactions(), page.transactions().size(), page.totalTransactions()))
                 .expand(state -> {
                     if (state.nextOffset() >= state.total()) return Mono.empty();
                     return plaidClient.getTransactions(accessToken, from, to, PAGE_SIZE, state.nextOffset())
+                            .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                             .map(page -> new PageState(
                                     page.transactions(),
                                     state.nextOffset() + page.transactions().size(),

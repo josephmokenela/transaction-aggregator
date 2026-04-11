@@ -37,6 +37,14 @@ class KafkaTopicConfig {
                 .build();
     }
 
+    @Bean
+    NewTopic transactionsDlt(@Value("${app.kafka.topic}") String topicName) {
+        return TopicBuilder.name(topicName + ".DLT")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
     private ObjectMapper kafkaObjectMapper() {
         return new ObjectMapper().registerModule(new JavaTimeModule());
     }

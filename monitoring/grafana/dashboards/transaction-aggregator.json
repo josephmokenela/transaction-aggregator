@@ -143,6 +143,70 @@
       "fieldConfig": {
         "defaults": { "unit": "short" }
       }
+    },
+    {
+      "id": 9,
+      "title": "Kafka Messages Dropped (DLT rate/min)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(kafka_messages_dropped_total{application=\"transaction-aggregator\"}[1m]) * 60",
+          "legendFormat": "{{reason}}",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "fixedColor": "orange", "mode": "fixed" } }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Plaid Circuit Breaker Transitions",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "increase(plaid_circuit_transitions_total{application=\"transaction-aggregator\"}[5m])",
+          "legendFormat": "→ {{to}}",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Transaction Save Duration (P99 ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 40, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(transactions_save_duration_seconds_bucket{application=\"transaction-aggregator\"}[1m])) * 1000",
+          "legendFormat": "p99 {{source}}",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Plaid Fetch Duration (P99 ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 40, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(plaid_fetch_duration_seconds_bucket{application=\"transaction-aggregator\"}[5m])) * 1000",
+          "legendFormat": "p99",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
     }
   ]
 }

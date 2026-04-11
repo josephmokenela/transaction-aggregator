@@ -1,14 +1,18 @@
 package io.mokenela.transactionaggregator.adapter.in.kafka;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.application.service.TransactionCategorizationService;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
@@ -27,11 +31,20 @@ class KafkaTransactionConsumer {
 
     private final SaveTransactionPort saveTransactionPort;
     private final TransactionCategorizationService categorizationService;
+    private final KafkaTemplate<String, KafkaTransactionEvent> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
+    private final String dltTopic;
 
     KafkaTransactionConsumer(SaveTransactionPort saveTransactionPort,
-                             TransactionCategorizationService categorizationService) {
+                             TransactionCategorizationService categorizationService,
+                             KafkaTemplate<String, KafkaTransactionEvent> kafkaTemplate,
+                             MeterRegistry meterRegistry,
+                             @Value("${app.kafka.topic}") String topic) {
         this.saveTransactionPort = saveTransactionPort;
         this.categorizationService = categorizationService;
+        this.kafkaTemplate = kafkaTemplate;
+        this.meterRegistry = meterRegistry;
+        this.dltTopic = topic + ".DLT";
     }
 
     @KafkaListener(
@@ -44,19 +57,38 @@ class KafkaTransactionConsumer {
         log.info("Received batch of {} transaction event(s) from Kafka", events.size());
 
         Flux.fromIterable(events)
-                .map(this::toDomain)
-                .onErrorContinue((ex, obj) -> log.error("Failed to map event to domain, skipping: {}", ex.getMessage(), ex))
-                .flatMap(t -> saveTransactionPort.save(t)
-                        .retryWhen(Retry.backoff(3, Duration.ofMillis(200))
-                                .filter(ex -> ex.getMessage() != null && ex.getMessage().contains("R2DBC Connection"))
-                                .doBeforeRetry(sig -> log.warn("Retrying save for id={} (attempt {})", t.id().value(), sig.totalRetriesInARow() + 1)))
-                        .doOnError(ex -> log.error("Failed to save transaction id={}: {}", t.id().value(), ex.getMessage()))
-                        .onErrorResume(ex -> reactor.core.publisher.Mono.empty()), 8)
+                .flatMap(event -> {
+                    Transaction transaction;
+                    try {
+                        transaction = toDomain(event);
+                    } catch (Exception ex) {
+                        log.error("Failed to map event id={}, routing to DLT: {}", event.id(), ex.getMessage());
+                        return sendToDlt(event, "mapping_error");
+                    }
+                    return saveTransactionPort.save(transaction)
+                            .retryWhen(Retry.backoff(3, Duration.ofMillis(200))
+                                    .filter(ex -> ex.getMessage() != null && ex.getMessage().contains("R2DBC Connection"))
+                                    .doBeforeRetry(sig -> log.warn("Retrying save id={} (attempt {})",
+                                            transaction.id().value(), sig.totalRetriesInARow() + 1)))
+                            .onErrorResume(ex -> {
+                                log.error("Failed to save id={} after retries, routing to DLT: {}",
+                                        transaction.id().value(), ex.getMessage());
+                                return sendToDlt(event, "save_error");
+                            });
+                }, 8)
                 .doOnComplete(() -> log.info("Batch of {} event(s) processed", events.size()))
                 .subscribe(
                         t -> {},
                         ex -> log.error("Fatal error in Kafka consumer pipeline", ex)
                 );
+    }
+
+    private Mono<Transaction> sendToDlt(KafkaTransactionEvent event, String reason) {
+        meterRegistry.counter("kafka.messages.dropped", "reason", reason).increment();
+        return Mono.fromFuture(kafkaTemplate.send(dltTopic, event.id(), event).toCompletableFuture())
+                .doOnSuccess(r -> log.info("Routed event id={} to DLT ({})", event.id(), reason))
+                .doOnError(ex -> log.error("Failed to route event id={} to DLT: {}", event.id(), ex.getMessage()))
+                .then(Mono.empty());
     }
 
     private Transaction toDomain(KafkaTransactionEvent event) {

@@ -7,11 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -35,9 +38,12 @@ class PlaidClient {
             @Value("${app.plaid.client-id}") String clientId,
             @Value("${app.plaid.secret}") String secret,
             @Value("${app.plaid.institution-id}") String institutionId) {
+        var httpClient = HttpClient.create()
+                .responseTimeout(Duration.ofSeconds(10));
         this.webClient = WebClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
         this.clientId = clientId;
         this.secret = secret;
@@ -105,6 +111,9 @@ class PlaidClient {
                             if (body.contains("PRODUCT_NOT_READY")) {
                                 return Mono.error(new ProductNotReadyException(body));
                             }
+                            if (body.contains("INVALID_ACCESS_TOKEN")) {
+                                return Mono.error(new InvalidAccessTokenException(body));
+                            }
                             return Mono.error(new RuntimeException("Plaid error: " + body));
                         }))
                 .bodyToMono(TransactionsPage.class);
@@ -112,6 +121,10 @@ class PlaidClient {
 
     static final class ProductNotReadyException extends RuntimeException {
         ProductNotReadyException(String body) { super("Plaid PRODUCT_NOT_READY: " + body); }
+    }
+
+    static final class InvalidAccessTokenException extends RuntimeException {
+        InvalidAccessTokenException(String body) { super("Plaid INVALID_ACCESS_TOKEN: " + body); }
     }
 
     // ── Request / Response DTOs ───────────────────────────────────────────────

@@ -99,7 +99,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
         StepVerifier.create(
                 saveTransactionPort.save(salary)
                         .then(saveTransactionPort.save(shopping))
-                        .thenMany(loadTransactionPort.loadByFilter(filter))
+                        .thenMany(loadTransactionPort.loadByFilter(filter, 50))
         )
                 .assertNext(tx -> assertThat(tx.category()).isEqualTo(TransactionCategory.SALARY))
                 .verifyComplete();

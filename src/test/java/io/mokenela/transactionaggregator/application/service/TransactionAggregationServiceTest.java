@@ -189,10 +189,9 @@ class TransactionAggregationServiceTest {
         var filter = TransactionFilter.builder().customerId(CUSTOMER_ID).build();
         var query = new SearchTransactionsQuery(filter, 2);
 
-        when(loadTransactionPort.loadByFilter(filter)).thenReturn(Flux.just(
+        when(loadTransactionPort.loadByFilter(filter, 2)).thenReturn(Flux.just(
                 sampleTransaction(TransactionType.CREDIT, "10.00"),
-                sampleTransaction(TransactionType.DEBIT, "20.00"),
-                sampleTransaction(TransactionType.CREDIT, "30.00")
+                sampleTransaction(TransactionType.DEBIT, "20.00")
         ));
 
         StepVerifier.create(service.search(query))
