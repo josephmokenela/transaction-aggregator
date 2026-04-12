@@ -1,0 +1,129 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+# Cancel any in-progress run on the same branch when a newer push arrives.
+# Prevents queue build-up on fast-moving feature branches.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+
+  # ── Job 1: Test ──────────────────────────────────────────────────────────────
+  # Runs on every push and pull request.
+  # Integration tests use Testcontainers (PostgreSQL) — Docker is available on
+  # ubuntu-latest so no extra service containers are needed.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven   # caches ~/.m2 keyed on pom.xml hash
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      - name: Run unit and integration tests
+        run: ./mvnw verify
+
+      - name: Upload test reports
+        if: always()   # upload even on failure so failures are diagnosable
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          retention-days: 7
+
+  # ── Job 2: Build & Push ───────────────────────────────────────────────────────
+  # Runs only on pushes (not PRs) once tests pass.
+  # Pushes to GitHub Container Registry (ghcr.io) — no external registry secrets needed,
+  # GITHUB_TOKEN is sufficient.
+  #
+  # Tagging strategy:
+  #   push to main  → sha-<short-sha>  +  latest
+  #   git tag v1.2.3 → sha-<short-sha>  +  latest  +  1.2.3  +  1.2
+  build-and-push:
+    name: Build & Push
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write   # required to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache keeps Docker layer cache warm between runs —
+          # the dependency layer (slowest) is reused as long as pom.xml hasn't changed.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Deploy (placeholder) ─────────────────────────────────────────────────
+      # Uncomment once a target cluster is available and add KUBECONFIG to
+      # repository secrets (Settings → Secrets → Actions).
+      #
+      # The recommended approach is a dedicated service account with a RoleBinding
+      # scoped to the transaction-aggregator namespace — not a cluster-admin kubeconfig.
+      #
+      # - name: Deploy to Kubernetes
+      #   env:
+      #     KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+      #   run: |
+      #     echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig
+      #     export KUBECONFIG=/tmp/kubeconfig
+      #     kubectl set image deployment/transaction-aggregator \
+      #       transaction-aggregator=${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+      #       -n transaction-aggregator
+      #     kubectl rollout status deployment/transaction-aggregator \
+      #       -n transaction-aggregator --timeout=120s

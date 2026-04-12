@@ -5,6 +5,7 @@ import io.mokenela.transactionaggregator.domain.exception.TransactionNotFoundExc
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -40,6 +41,13 @@ class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
         log.warn("Validation failed: {}", detail);
         return ErrorResponse.of("VALIDATION_ERROR", detail);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ErrorResponse handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        return ErrorResponse.of("FORBIDDEN", "Access denied");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

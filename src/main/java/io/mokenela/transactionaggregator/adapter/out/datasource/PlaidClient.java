@@ -2,6 +2,7 @@ package io.mokenela.transactionaggregator.adapter.out.datasource;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.netty.channel.ChannelOption;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,7 +40,8 @@ class PlaidClient {
             @Value("${app.plaid.secret}") String secret,
             @Value("${app.plaid.institution-id}") String institutionId) {
         var httpClient = HttpClient.create()
-                .responseTimeout(Duration.ofSeconds(10));
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5_000)  // TCP handshake timeout
+                .responseTimeout(Duration.ofSeconds(10));              // time-to-first-byte timeout
         this.webClient = WebClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)

@@ -24,7 +24,11 @@ spec:
             - containerPort: 9090
           volumeMounts:
             - name: config
-              mountPath: /etc/prometheus
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+            - name: alerts
+              mountPath: /etc/prometheus/alerts.yml
+              subPath: alerts.yml
             - name: data
               mountPath: /prometheus
           resources:
@@ -38,5 +42,8 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        - name: alerts
+          configMap:
+            name: prometheus-alerts
         - name: data
           emptyDir: {}

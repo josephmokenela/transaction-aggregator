@@ -34,7 +34,9 @@ services:
         vault kv put secret/transaction-aggregator \
           vault.db.password=postgres \
           vault.plaid.client-id=$$PLAID_CLIENT_ID \
-          vault.plaid.secret=$$PLAID_SECRET &&
+          vault.plaid.secret=$$PLAID_SECRET \
+          vault.jwt.secret=dev-only-secret-key-change-in-production!! \
+          vault.jwt.admin-secret=dev-only-admin-secret &&
         echo 'Vault secrets seeded.'
     restart: "no"
 
@@ -139,6 +141,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

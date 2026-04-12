@@ -1,0 +1,148 @@
+groups:
+
+  # ── Availability ─────────────────────────────────────────────────────────────
+  - name: availability
+    rules:
+      - alert: TransactionAggregatorDown
+        expr: up{job="transaction-aggregator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Transaction Aggregator is down"
+          description: "The transaction-aggregator scrape target has been unreachable for more than 1 minute."
+
+  # ── HTTP ─────────────────────────────────────────────────────────────────────
+  - name: http
+    rules:
+      - alert: HighHttpErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{application="transaction-aggregator",status=~"5.."}[2m]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="transaction-aggregator"}[2m]))
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "More than 1% of HTTP requests are returning 5xx errors (current: {{ $value | humanizePercentage }})."
+
+      - alert: HighHttpLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, uri) (
+              rate(http_server_requests_seconds_bucket{application="transaction-aggregator"}[5m])
+            )
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP P99 latency on {{ $labels.uri }}"
+          description: "P99 response time for {{ $labels.uri }} has been above 2s for 5 minutes (current: {{ $value | humanizeDuration }})."
+
+  # ── Business ─────────────────────────────────────────────────────────────────
+  - name: business
+    rules:
+      - alert: SyncErrorsSustained
+        expr: |
+          sum(rate(sync_errors_total{application="transaction-aggregator"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Transaction sync errors are persisting"
+          description: "Sync errors have been occurring continuously for 5 minutes. Check the data source adapters and logs."
+
+      - alert: KafkaDeadLetterMessages
+        expr: |
+          increase(kafka_messages_dropped_total{application="transaction-aggregator"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka messages routed to dead-letter topic"
+          description: "{{ $value }} message(s) dropped to the DLT in the last 5 minutes (reason: {{ $labels.reason }})."
+
+      - alert: PlaidCircuitBreakerOpen
+        expr: |
+          increase(plaid_circuit_transitions_total{application="transaction-aggregator",to="OPEN"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Plaid circuit breaker has opened"
+          description: "The Plaid circuit breaker transitioned to OPEN — high failure or slow-call rate detected. Plaid sync is now suspended until the breaker recovers."
+
+  # ── Database ─────────────────────────────────────────────────────────────────
+  - name: database
+    rules:
+      - alert: R2dbcConnectionPoolPressure
+        expr: |
+          r2dbc_pool_pending{application="transaction-aggregator"} > 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "R2DBC connection pool has pending requests"
+          description: "{{ $value }} request(s) are waiting for a database connection. The pool may be undersized or queries may be slow."
+
+  # ── JVM ──────────────────────────────────────────────────────────────────────
+  - name: jvm
+    rules:
+      - alert: HighJvmHeapUsage
+        expr: |
+          (
+            sum(jvm_memory_used_bytes{application="transaction-aggregator",area="heap"})
+            /
+            sum(jvm_memory_max_bytes{application="transaction-aggregator",area="heap"})
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM heap usage is high"
+          description: "Heap has been above 85% for 5 minutes (current: {{ $value | humanizePercentage }}). Risk of OOM."
+
+      - alert: JvmHeapNearExhaustion
+        expr: |
+          (
+            sum(jvm_memory_used_bytes{application="transaction-aggregator",area="heap"})
+            /
+            sum(jvm_memory_max_bytes{application="transaction-aggregator",area="heap"})
+          ) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JVM heap is near exhaustion"
+          description: "Heap has been above 95% for 2 minutes (current: {{ $value | humanizePercentage }}). OOM imminent — pod restart likely required."
+
+      - alert: HighGcPauseRate
+        expr: |
+          rate(jvm_gc_pause_seconds_sum{application="transaction-aggregator"}[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GC pause rate"
+          description: "GC is consuming more than 200ms per second (current: {{ $value | humanizeDuration }}/s). Review heap sizing and allocation patterns."
+
+  # ── Performance ──────────────────────────────────────────────────────────────
+  - name: performance
+    rules:
+      - alert: SlowTransactionSaves
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, source) (
+              rate(transactions_save_duration_seconds_bucket{application="transaction-aggregator"}[5m])
+            )
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Transaction saves are slow (source: {{ $labels.source }})"
+          description: "P99 save duration from source {{ $labels.source }} has been above 1s for 5 minutes (current: {{ $value | humanizeDuration }})."
