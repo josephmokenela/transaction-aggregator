@@ -5,6 +5,7 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.ArchConfiguration;
 import org.junit.jupiter.api.Test;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -39,6 +40,17 @@ class HexagonalArchitectureTest {
     private static final String IN     = ROOT + ".adapter.in..";
     private static final String OUT    = ROOT + ".adapter.out..";
     private static final String CONFIG = ROOT + ".config..";
+
+    static {
+        // Prevent ArchUnit from chasing transitive class references back into the JDK or
+        // dependency JARs. Without this, the dependency resolver follows import references
+        // into jrt:/java.base/... and hits class-file major version 69 (Java 25) which
+        // ArchUnit's bundled ASM cannot parse. Disabling classpath resolution is safe here
+        // because every rule in this file checks package names or visibility — neither
+        // requires resolved transitive dependencies. This flag is a no-op on Java 21 (CI)
+        // where the JDK class-file version is 65 and ArchUnit would have parsed it fine.
+        ArchConfiguration.get().setResolveMissingDependenciesFromClassPath(false);
+    }
 
     /**
      * Imported once for the entire test class.

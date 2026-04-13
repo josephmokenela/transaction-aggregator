@@ -27,6 +27,10 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      security-events: write  # required to upload Trivy SARIF results to the Security tab
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,6 +57,33 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
           retention-days: 7
+
+      # ── Dependency & secret scan ──────────────────────────────────────────────
+      # Scans pom.xml for known CVEs and the repository for accidentally committed
+      # secrets (API keys, passwords, tokens). Runs on every PR so vulnerabilities
+      # are caught before they reach main.
+      #
+      # --ignore-unfixed: suppress findings that have no upstream fix yet — reduces
+      # noise from issues developers cannot act on immediately.
+      # To permanently suppress a specific CVE, add it to .trivyignore at repo root.
+      - name: Scan dependencies and secrets (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: sarif
+          output: trivy-fs.sarif
+
+      - name: Upload dependency scan results to Security tab
+        if: always()   # upload even when the scan finds violations
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: dependency-and-secret-scan
 
   # ── Job 2: Build & Push ───────────────────────────────────────────────────────
   # Runs only on pushes (not PRs) once tests pass.
@@ -137,3 +168,57 @@ jobs:
             -n transaction-aggregator
           kubectl rollout status deployment/transaction-aggregator \
             -n transaction-aggregator --timeout=120s
+
+  # ── Job 3: Security Scan ──────────────────────────────────────────────────────
+  # Scans the published container image for OS-level and runtime vulnerabilities.
+  # Runs after the image is pushed so Trivy pulls the exact artifact that will be
+  # deployed — not a locally built image that may differ from the registry copy.
+  #
+  # Results are uploaded to the GitHub Security tab (Security → Code scanning)
+  # so the team has a persistent, searchable record of open findings.
+  security-scan:
+    name: Security Scan
+    needs: build-and-push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read          # pull the image from ghcr.io
+      security-events: write  # upload SARIF to the Security tab
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Scan the image that was just pushed. Trivy checks:
+      #   - OS packages (Amazon Linux RPMs installed in the runtime stage)
+      #   - Application libraries (JARs bundled into the Spring Boot fat JAR)
+      #
+      # --ignore-unfixed: same rationale as the fs scan — skip findings with no fix.
+      # exit-code 1 blocks deployment if CRITICAL or HIGH vulnerabilities are found.
+      - name: Scan container image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: sarif
+          output: trivy-image.sarif
+
+      - name: Upload image scan results to Security tab
+        if: always()   # upload even when the scan finds violations
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: container-scan

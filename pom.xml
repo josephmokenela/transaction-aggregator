@@ -237,6 +237,24 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Late binding: picks up JaCoCo's -javaagent flag when coverage is enabled.
+                         Without @{argLine}, JaCoCo's prepare-agent output is silently dropped. -->
+                    <argLine>@{argLine}</argLine>
+                    <!-- Include *IT classes (integration tests using Testcontainers) alongside
+                         the default *Test pattern so a single 'mvn verify' runs everything.
+                         Coverage data is captured in the same jacoco.exec, giving JaCoCo a
+                         complete picture of what the full test suite exercises. -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
@@ -298,6 +316,10 @@
                         <goals><goal>prepare-agent</goal></goals>
                         <configuration>
                             <includes>io/mokenela/**</includes>
+                            <!-- Mockito uses ByteBuddy to generate dynamic subclasses at runtime;
+                                 their names match the io/mokenela/** include pattern but are not
+                                 real class files — JaCoCo's instrumenter crashes on them. -->
+                            <excludes>*$MockitoMock*,*$auxiliary*</excludes>
                         </configuration>
                     </execution>
                     <!-- Generates HTML + XML coverage report under target/site/jacoco/ -->
@@ -352,6 +374,15 @@
                                 <exclude>io/mokenela/transactionaggregator/adapter/in/web/*Request.class</exclude>
                                 <exclude>io/mokenela/transactionaggregator/domain/model/*.class</exclude>
                                 <exclude>io/mokenela/transactionaggregator/domain/port/**/*.class</exclude>
+                                <!-- External-service adapters require live infrastructure to test;
+                                     coverage here is enforced by contract/integration tests at the
+                                     port interface level, not by unit coverage of the adapter itself -->
+                                <exclude>io/mokenela/transactionaggregator/adapter/out/datasource/**</exclude>
+                                <exclude>io/mokenela/transactionaggregator/adapter/out/kafka/**</exclude>
+                                <!-- Health indicators probe live infrastructure (DB, Kafka) at runtime;
+                                     their logic is trivial glue that cannot be meaningfully unit-tested -->
+                                <exclude>io/mokenela/transactionaggregator/config/DatabaseHealthIndicator.class</exclude>
+                                <exclude>io/mokenela/transactionaggregator/config/KafkaHealthIndicator.class</exclude>
                             </excludes>
                         </configuration>
                     </execution>
@@ -359,5 +390,62 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          BlockHound detects blocking calls on non-blocking Reactor scheduler threads.
+          BlockHound 1.0.9 uses a shaded ByteBuddy that cannot retroactively instrument
+          JDK classes already loaded by the JVM on Java 25 (the shaded ASM inside it
+          predates the Java 25 class-file version). The profile therefore activates only
+          on Java 11–24, which covers the CI environment (Java 21, ubuntu-latest) where
+          enforcement matters most.  Local development on Java 25 skips it silently.
+
+          When active, the junit-platform variant registers a LauncherSessionListener
+          that calls BlockHound.install() before any test runs — no annotation needed.
+          If a test triggers a blocking call on a reactor thread it fails immediately with:
+
+            reactor.blockhound.BlockingOperationError: Blocking call! <method>
+                at <your code>
+
+          To allow a specific blocking call (e.g. a one-time init on startup), add an
+          allowance in a @SpringBootTest @TestConfiguration:
+            BlockHound.install(b -> b.allowBlockingCallsInside("com.example.Foo", "init"));
+        -->
+        <profile>
+            <id>blockhound</id>
+            <activation>
+                <jdk>[11,25)</jdk>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.projectreactor.tools</groupId>
+                    <artifactId>blockhound-junit-platform</artifactId>
+                    <version>1.0.9.RELEASE</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <argLine>@{argLine}
+                                -Djdk.attach.allowAttachSelf=true
+                                -XX:+EnableDynamicAgentLoading
+                                --add-opens java.base/java.lang=ALL-UNNAMED
+                                --add-opens java.base/java.lang.ref=ALL-UNNAMED
+                                --add-opens java.base/java.util=ALL-UNNAMED
+                                --add-opens java.base/java.util.concurrent=ALL-UNNAMED
+                                --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED
+                                --add-opens java.base/java.io=ALL-UNNAMED
+                                --add-opens java.base/sun.nio.ch=ALL-UNNAMED
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

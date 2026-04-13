@@ -13,18 +13,19 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Extracts or generates an {@code X-Request-ID} correlation identifier for every
- * HTTP request and propagates it through the reactive pipeline via the Reactor
- * {@link Context}.
+ * Injects cross-service observability headers on every HTTP request/response.
  *
- * <p>The filter runs at highest precedence so the ID is available to all downstream
- * filters (including Spring Security). {@link RequestIdMdcAccessor} bridges the
- * Reactor context entry to MDC, making it visible in log lines without any
- * per-operator boilerplate.
+ * <p><strong>X-Request-ID</strong> — correlation identifier. Clients MAY supply their
+ * own value; if absent a UUID is generated. The value is echoed in the response and
+ * propagated through the reactive pipeline via Reactor {@link Context} so every log
+ * line carries it automatically (see {@link RequestIdMdcAccessor}).
  *
- * <p>Clients MAY supply their own {@code X-Request-ID}; if absent, a UUID is
- * generated. Either way, the value is echoed back in the response so callers
- * can correlate logs.
+ * <p><strong>X-API-Version</strong> — the current API major version. Stamped on every
+ * response so clients and API gateways can identify which contract version served the
+ * request without inspecting the URL. Defined in ADR-006.
+ *
+ * <p>The filter runs at highest precedence so both headers are set before Spring
+ * Security and all downstream filters execute.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -32,6 +33,8 @@ class CorrelationIdFilter implements WebFilter {
 
     static final String REQUEST_ID_MDC_KEY = "requestId";
     static final String REQUEST_ID_HEADER  = "X-Request-ID";
+    static final String API_VERSION_HEADER = "X-API-Version";
+    static final String API_VERSION        = "1";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -41,6 +44,7 @@ class CorrelationIdFilter implements WebFilter {
                 .orElseGet(() -> UUID.randomUUID().toString());
 
         exchange.getResponse().getHeaders().set(REQUEST_ID_HEADER, requestId);
+        exchange.getResponse().getHeaders().set(API_VERSION_HEADER, API_VERSION);
 
         return chain.filter(exchange)
                 .contextWrite(Context.of(REQUEST_ID_MDC_KEY, requestId));

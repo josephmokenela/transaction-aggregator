@@ -16,6 +16,7 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 
 /**
  * R2DBC-backed implementation of the persistence output ports.
@@ -115,10 +116,17 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     public Flux<Transaction> loadByFilter(TransactionFilter filter, int limit) {
         int effectiveLimit = Math.min(limit, MAX_LIMIT);
 
-        // Keyword search uses the GIN full-text index — route to a dynamic SQL query
-        // that also applies any other active filter dimensions (customer, account, dates).
-        if (filter.keyword() != null && !filter.keyword().isBlank()) {
-            return searchByKeywordWithFilters(filter, effectiveLimit);
+        // Route to DatabaseClient whenever enum-typed columns (category, type) or a full-text
+        // keyword are in the filter. The Criteria API sends String values with an explicit
+        // PostgreSQL text OID; the driver then refuses the implicit cast to transaction_category
+        // or transaction_type enum columns. DatabaseClient binds without an OID ("unknown"),
+        // which PostgreSQL will implicitly cast to the target enum type.
+        boolean needsDatabaseClient = filter.category() != null
+                || filter.type() != null
+                || (filter.keyword() != null && !filter.keyword().isBlank());
+
+        if (needsDatabaseClient) {
+            return queryWithDatabaseClient(filter, effectiveLimit);
         }
 
         return template.select(
@@ -129,38 +137,45 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     }
 
     /**
-     * Full-text keyword search that also honours all other active filter fields.
-     * Uses DatabaseClient with named parameters to build the WHERE clause dynamically
-     * so no filter dimension is silently dropped when keyword is present.
+     * Builds and executes a dynamic SQL query via DatabaseClient using PostgreSQL
+     * positional parameters ({@code $1}, {@code $2}, ...).
+     *
+     * <p>Named parameters (e.g. {@code :name}) are NOT used here because the PostgreSQL
+     * R2DBC driver requires positional markers and the Spring R2DBC named-parameter
+     * expansion layer is not reliable for all code paths. Positional binding via
+     * {@link org.springframework.r2dbc.core.DatabaseClient.GenericExecuteSpec#bind(int, Object)}
+     * is the safest approach.</p>
+     *
+     * <p>Enum-typed columns ({@code category}, {@code type}) receive an explicit PostgreSQL
+     * type cast ({@code $n::transaction_category}, {@code $n::transaction_type}) because the
+     * driver sends String parameters with an {@code unknown} OID and PostgreSQL still needs
+     * an explicit hint to resolve the target enum type in some prepared-statement contexts.</p>
      */
-    private Flux<Transaction> searchByKeywordWithFilters(TransactionFilter filter, int limit) {
-        var sql = new StringBuilder("""
-                SELECT * FROM transactions
-                WHERE to_tsvector('english', coalesce(description, '') || ' ' || coalesce(merchant_name, ''))
-                      @@ plainto_tsquery('english', :keyword)
-                """);
+    private Flux<Transaction> queryWithDatabaseClient(TransactionFilter filter, int limit) {
+        var sql     = new StringBuilder("SELECT * FROM transactions WHERE 1=1");
+        var params  = new ArrayList<>();
 
-        if (filter.customerId()  != null) sql.append(" AND customer_id    = :customerId");
-        if (filter.accountId()   != null) sql.append(" AND account_id     = :accountId");
-        if (filter.category()    != null) sql.append(" AND category       = :category");
-        if (filter.type()        != null) sql.append(" AND type           = :type");
-        if (filter.dataSourceId()!= null) sql.append(" AND data_source_id = :dataSourceId");
-        if (filter.from()        != null) sql.append(" AND occurred_at   >= :from");
-        if (filter.to()          != null) sql.append(" AND occurred_at   <= :to");
-        sql.append(" ORDER BY occurred_at DESC LIMIT :limit");
+        if (filter.keyword() != null && !filter.keyword().isBlank()) {
+            params.add(filter.keyword());
+            sql.append("""
 
-        var spec = template.getDatabaseClient()
-                .sql(sql.toString())
-                .bind("keyword", filter.keyword())
-                .bind("limit", limit);
+                AND to_tsvector('english', coalesce(description, '') || ' ' || coalesce(merchant_name, ''))
+                    @@ plainto_tsquery('english', $""").append(params.size()).append(")");
+        }
+        if (filter.customerId()   != null) { params.add(filter.customerId().value());    sql.append(" AND customer_id    = $").append(params.size()); }
+        if (filter.accountId()    != null) { params.add(filter.accountId().value());     sql.append(" AND account_id     = $").append(params.size()); }
+        if (filter.category()     != null) { params.add(filter.category().name());       sql.append(" AND category       = $").append(params.size()).append("::transaction_category"); }
+        if (filter.type()         != null) { params.add(filter.type().name());           sql.append(" AND type           = $").append(params.size()).append("::transaction_type"); }
+        if (filter.dataSourceId() != null) { params.add(filter.dataSourceId().value());  sql.append(" AND data_source_id = $").append(params.size()); }
+        if (filter.from()         != null) { params.add(filter.from());                  sql.append(" AND occurred_at   >= $").append(params.size()); }
+        if (filter.to()           != null) { params.add(filter.to());                    sql.append(" AND occurred_at   <= $").append(params.size()); }
+        params.add(limit);
+        sql.append(" ORDER BY occurred_at DESC LIMIT $").append(params.size());
 
-        if (filter.customerId()   != null) spec = spec.bind("customerId",   filter.customerId().value());
-        if (filter.accountId()    != null) spec = spec.bind("accountId",    filter.accountId().value());
-        if (filter.category()     != null) spec = spec.bind("category",     filter.category().name());
-        if (filter.type()         != null) spec = spec.bind("type",         filter.type().name());
-        if (filter.dataSourceId() != null) spec = spec.bind("dataSourceId", filter.dataSourceId().value());
-        if (filter.from()         != null) spec = spec.bind("from",         filter.from());
-        if (filter.to()           != null) spec = spec.bind("to",           filter.to());
+        var spec = template.getDatabaseClient().sql(sql.toString());
+        for (int i = 0; i < params.size(); i++) {
+            spec = spec.bind(i, params.get(i));
+        }
 
         return spec.map((row, meta) -> converter.read(TransactionEntity.class, row))
                 .all()
@@ -176,31 +191,24 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
      */
     @Override
     public Flux<CategoryAggregate> aggregateByFilter(TransactionFilter filter) {
-        var sql = new StringBuilder("""
-                SELECT type, category, currency_code,
-                       SUM(amount) AS total_amount, COUNT(*) AS tx_count
-                FROM transactions
-                WHERE 1=1
-                """);
+        var sql    = new StringBuilder(
+                "SELECT type, category, currency_code, SUM(amount) AS total_amount, COUNT(*) AS tx_count\n" +
+                "FROM transactions WHERE 1=1");
+        var params = new ArrayList<>();
 
-        if (filter.customerId()   != null) sql.append(" AND customer_id    = :customerId");
-        if (filter.accountId()    != null) sql.append(" AND account_id     = :accountId");
-        if (filter.category()     != null) sql.append(" AND category       = :category");
-        if (filter.type()         != null) sql.append(" AND type           = :type");
-        if (filter.dataSourceId() != null) sql.append(" AND data_source_id = :dataSourceId");
-        if (filter.from()         != null) sql.append(" AND occurred_at   >= :from");
-        if (filter.to()           != null) sql.append(" AND occurred_at   <= :to");
+        if (filter.customerId()   != null) { params.add(filter.customerId().value());   sql.append(" AND customer_id    = $").append(params.size()); }
+        if (filter.accountId()    != null) { params.add(filter.accountId().value());    sql.append(" AND account_id     = $").append(params.size()); }
+        if (filter.category()     != null) { params.add(filter.category().name());      sql.append(" AND category       = $").append(params.size()).append("::transaction_category"); }
+        if (filter.type()         != null) { params.add(filter.type().name());          sql.append(" AND type           = $").append(params.size()).append("::transaction_type"); }
+        if (filter.dataSourceId() != null) { params.add(filter.dataSourceId().value()); sql.append(" AND data_source_id = $").append(params.size()); }
+        if (filter.from()         != null) { params.add(filter.from());                 sql.append(" AND occurred_at   >= $").append(params.size()); }
+        if (filter.to()           != null) { params.add(filter.to());                   sql.append(" AND occurred_at   <= $").append(params.size()); }
         sql.append(" GROUP BY type, category, currency_code ORDER BY total_amount DESC");
 
         var spec = template.getDatabaseClient().sql(sql.toString());
-
-        if (filter.customerId()   != null) spec = spec.bind("customerId",   filter.customerId().value());
-        if (filter.accountId()    != null) spec = spec.bind("accountId",    filter.accountId().value());
-        if (filter.category()     != null) spec = spec.bind("category",     filter.category().name());
-        if (filter.type()         != null) spec = spec.bind("type",         filter.type().name());
-        if (filter.dataSourceId() != null) spec = spec.bind("dataSourceId", filter.dataSourceId().value());
-        if (filter.from()         != null) spec = spec.bind("from",         filter.from());
-        if (filter.to()           != null) spec = spec.bind("to",           filter.to());
+        for (int i = 0; i < params.size(); i++) {
+            spec = spec.bind(i, params.get(i));
+        }
 
         return spec.map((row, meta) -> {
             var type         = TransactionType.valueOf(row.get("type", String.class));
