@@ -92,61 +92,160 @@ docker build -t transaction-aggregator:latest .
 
 The integration tests (`*IT.java`) use **Testcontainers** to spin up a real PostgreSQL instance automatically — no manual setup needed.
 
+## Authentication
+
+All API endpoints (except `/api/v1/auth/**`, `/actuator/**`, and Swagger) require a JWT passed as:
+
+```
+Authorization: Bearer <token>
+```
+
+### Obtaining a token
+
+Two roles are supported:
+
+| Role | Access |
+|------|--------|
+| `ROLE_CUSTOMER` | Own data only — scoped by `customerId` in the token |
+| `ROLE_ADMIN` | Unrestricted access to all customers and admin endpoints |
+
+**Customer token** — provide the customer UUID:
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"customerId": "11111111-1111-1111-1111-111111111111"}'
+```
+
+**Admin token** — provide the admin secret (default for local dev: `dev-only-admin-secret`):
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/auth/admin-token \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "dev-only-admin-secret"}'
+```
+
+Both responses return:
+
+```json
+{
+  "token": "<jwt>",
+  "type": "Bearer",
+  "expiresIn": 86400
+}
+```
+
+Store the token and pass it on subsequent requests:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"customerId": "11111111-1111-1111-1111-111111111111"}' | jq -r .token)
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/customers/11111111-1111-1111-1111-111111111111/summary?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z
+```
+
+> The token endpoint is rate-limited to 10 requests per minute.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | `dev-only-secret-key-change-in-production!!` | HMAC-SHA256 signing key (min 32 chars) |
+| `JWT_EXPIRY_HOURS` | `24` | Token lifetime in hours |
+| `JWT_ADMIN_SECRET` | `dev-only-admin-secret` | Secret required to obtain an admin token |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:4200` | Comma-separated allowed CORS origins |
+
+> In production all secrets are sourced from Vault — see the `docker` profile in `application.yaml`.
+
 ## API overview
 
 All endpoints are documented interactively at `/swagger-ui.html`.
 
 ### Transactions — `POST /api/v1/transactions`
 
-Record a manual transaction. The category is assigned automatically.
+Record a manual transaction. The category is assigned automatically. Customers may only record for their own `customerId`.
 
-```json
-{
-  "customerId": "11111111-1111-1111-1111-111111111111",
-  "accountId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-  "amount": 3500.00,
-  "currency": "GBP",
-  "type": "CREDIT",
-  "description": "Monthly salary payment",
-  "merchantName": "Employer Ltd"
-}
+```bash
+curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "11111111-1111-1111-1111-111111111111",
+    "accountId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "amount": 3500.00,
+    "currency": "GBP",
+    "type": "CREDIT",
+    "description": "Monthly salary payment",
+    "merchantName": "Employer Ltd"
+  }'
 ```
 
 ### Transactions — `GET /api/v1/transactions`
 
-Search with optional filters: `customerId`, `accountId`, `category`, `type`, `dataSourceId`, `keyword`, `from`, `to`, `limit`.
+Search with optional filters: `customerId`, `accountId`, `category`, `type`, `dataSourceId`, `keyword`, `from`, `to`, `limit`. Customers are automatically scoped to their own data regardless of the `customerId` parameter.
+
+```bash
+curl -s "http://localhost:8080/api/v1/transactions?limit=10" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ### Transactions — `GET /api/v1/transactions/aggregate`
 
-Aggregate a time window into HOURLY / DAILY / WEEKLY / MONTHLY / YEARLY buckets.
+Aggregate a time window into HOURLY / DAILY / WEEKLY / MONTHLY / YEARLY buckets. Customers are scoped to their own account data.
 
-```
-GET /api/v1/transactions/aggregate
-  ?accountId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-  &period=MONTHLY
-  &from=2024-01-01T00:00:00Z
-  &to=2024-03-31T23:59:59Z
+```bash
+curl -s "http://localhost:8080/api/v1/transactions/aggregate\
+?accountId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\
+&period=MONTHLY\
+&from=2024-01-01T00:00:00Z\
+&to=2024-03-31T23:59:59Z" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-### Sync — `POST /api/v1/sync`
+### Sync — `POST /api/v1/sync` _(admin only)_
 
 Pull transactions from all registered mock data sources for a customer over a date range. Idempotent.
 
-```json
-{
-  "customerId": "11111111-1111-1111-1111-111111111111",
-  "from": "2024-01-01T00:00:00Z",
-  "to": "2024-01-31T23:59:59Z"
-}
+```bash
+curl -s -X POST http://localhost:8080/api/v1/sync \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "11111111-1111-1111-1111-111111111111",
+    "from": "2024-01-01T00:00:00Z",
+    "to": "2024-01-31T23:59:59Z"
+  }'
+```
+
+### Customers — `GET /api/v1/customers` _(admin only)_
+
+List all customers.
+
+```bash
+curl -s http://localhost:8080/api/v1/customers \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ### Customers — `GET /api/v1/customers/{id}/summary`
 
-Full financial summary — total inflow/outflow, net position, category breakdown.
+Full financial summary — total inflow/outflow, net position, category breakdown. Customers may only access their own summary.
+
+```bash
+curl -s "http://localhost:8080/api/v1/customers/11111111-1111-1111-1111-111111111111/summary\
+?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ### Customers — `GET /api/v1/customers/{id}/categories`
 
-Per-category spend totals with percentage of overall activity.
+Per-category spend totals with percentage of overall activity. Customers may only access their own breakdown.
+
+```bash
+curl -s "http://localhost:8080/api/v1/customers/11111111-1111-1111-1111-111111111111/categories\
+?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ## Observability
 
@@ -187,4 +286,8 @@ Key environment variables (all have sensible defaults for local dev):
 | `DB_NAME` | `transaction_aggregator` | Database name |
 | `DB_USERNAME` | `postgres` | Database user |
 | `DB_PASSWORD` | `postgres` | Database password |
+| `JWT_SECRET` | `dev-only-secret-key-change-in-production!!` | HMAC-SHA256 signing key (min 32 chars) |
+| `JWT_EXPIRY_HOURS` | `24` | Token lifetime in hours |
+| `JWT_ADMIN_SECRET` | `dev-only-admin-secret` | Secret required to obtain an admin token |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:4200` | Comma-separated allowed CORS origins |
 | `SPRING_PROFILES_ACTIVE` | _(none)_ | Set to `docker` inside containers |

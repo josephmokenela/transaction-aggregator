@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -69,6 +70,7 @@ public class DataSyncService implements SyncTransactionsUseCase, ListAvailableSo
     private Mono<Integer> syncFromSource(FetchTransactionsPort source, CustomerId customerId,
                                          Instant from, Instant to) {
         return source.fetchTransactions(customerId, from, to)
+                .timeout(Duration.ofSeconds(30))
                 .map(this::applyCategory)
                 .flatMap(saveTransactionPort::save)
                 .doOnNext(t -> log.trace("Saved transaction id={} source={} category={}",

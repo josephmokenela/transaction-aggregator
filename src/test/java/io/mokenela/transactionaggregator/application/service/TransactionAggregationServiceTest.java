@@ -118,7 +118,7 @@ class TransactionAggregationServiceTest {
     void aggregate_shouldReturnEmptySummaries_whenNoTransactionsExist() {
         var from = Instant.parse("2024-01-01T00:00:00Z");
         var to = Instant.parse("2024-01-31T23:59:59Z");
-        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.MONTHLY, from, to);
+        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.MONTHLY, from, to, null);
 
         when(loadTransactionPort.loadByAccountIdAndPeriod(ACCOUNT_ID, from, to)).thenReturn(Flux.empty());
 
@@ -144,7 +144,7 @@ class TransactionAggregationServiceTest {
         when(loadTransactionPort.loadByAccountIdAndPeriod(ACCOUNT_ID, from, to))
                 .thenReturn(Flux.just(tx1, tx2, tx3));
 
-        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.DAILY, from, to);
+        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.DAILY, from, to, null);
 
         StepVerifier.create(service.aggregate(query))
                 .assertNext(result -> {
@@ -175,7 +175,7 @@ class TransactionAggregationServiceTest {
                 Flux.just(sampleTransactionAt(TransactionType.CREDIT, "3500.00", jan),
                           sampleTransactionAt(TransactionType.CREDIT, "3500.00", feb)));
 
-        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.MONTHLY, from, to);
+        var query = new AggregateTransactionsQuery(ACCOUNT_ID, AggregationPeriod.MONTHLY, from, to, null);
 
         StepVerifier.create(service.aggregate(query))
                 .assertNext(result -> assertThat(result.summaries()).hasSize(2))

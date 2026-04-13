@@ -130,6 +130,64 @@ groups:
           summary: "High GC pause rate"
           description: "GC is consuming more than 200ms per second (current: {{ $value | humanizeDuration }}/s). Review heap sizing and allocation patterns."
 
+  # ── Kafka consumer lag ───────────────────────────────────────────────────────
+  - name: kafka
+    rules:
+      - alert: KafkaConsumerLagHigh
+        # kafka_consumer_fetch_manager_records_lag_max is emitted by Spring Boot's
+        # Micrometer Kafka integration and exposed via /actuator/prometheus.
+        # It reports the maximum lag across all assigned partitions for a given topic.
+        expr: |
+          kafka_consumer_fetch_manager_records_lag_max{
+            topic="transactions"
+          } > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high (topic: {{ $labels.topic }})"
+          description: >
+            Consumer group 'transaction-aggregator' is {{ $value | humanize }} record(s)
+            behind on topic {{ $labels.topic }} (partition: {{ $labels.partition }}).
+            Sustained for 5 minutes — the consumer may be slow or under-provisioned.
+            Check GC pressure, R2DBC pool saturation, and thread concurrency settings.
+
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          kafka_consumer_fetch_manager_records_lag_max{
+            topic="transactions"
+          } > 5000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka consumer lag is critical (topic: {{ $labels.topic }})"
+          description: >
+            Consumer group 'transaction-aggregator' is {{ $value | humanize }} record(s)
+            behind on topic {{ $labels.topic }} (partition: {{ $labels.partition }}).
+            At this lag the consumer is unlikely to catch up without intervention.
+            Consider scaling the consumer (increase concurrency or pod replicas)
+            or pausing ingestion until the backlog clears.
+
+      - alert: KafkaConsumerLagGrowing
+        # Fires when lag is increasing over a 10-minute window — distinct from
+        # KafkaConsumerLagHigh because a growing lag at any absolute level signals
+        # the consumer has stalled rather than merely fallen behind transiently.
+        expr: |
+          deriv(
+            kafka_consumer_fetch_manager_records_lag_max{topic="transactions"}[10m]
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is continuously growing (topic: {{ $labels.topic }})"
+          description: >
+            Lag on topic {{ $labels.topic }} (partition: {{ $labels.partition }}) has been
+            increasing for 10 minutes. This indicates the consumer is not keeping up with
+            the producer rate. Investigate consumer throughput, downstream R2DBC latency,
+            and whether the DLT is accumulating (check KafkaDeadLetterMessages).
+
   # ── Performance ──────────────────────────────────────────────────────────────
   - name: performance
     rules:

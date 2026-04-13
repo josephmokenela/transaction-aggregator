@@ -6,6 +6,7 @@ import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.in.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
+import io.mokenela.transactionaggregator.util.Mask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -62,7 +63,7 @@ public class TransactionAggregationService
         );
         log.debug("Recording transaction for customer={} account={} type={} amount={} category={}",
                 command.customerId().value(), command.accountId().value(),
-                command.type(), command.amount().amount(), category);
+                command.type(), Mask.amount(command.amount().amount()), category);
         return saveTransactionPort.save(transaction)
                 .doOnSuccess(tx -> meterRegistry.counter(
                         "transactions.recorded",
@@ -80,17 +81,21 @@ public class TransactionAggregationService
     @Override
     public Flux<Transaction> search(SearchTransactionsQuery query) {
         log.debug("Searching transactions with filter: customerId={} category={} keyword={} limit={}",
-                query.filter().customerId(), query.filter().category(), query.filter().keyword(), query.limit());
+                query.filter().customerId(), query.filter().category(),
+                Mask.text(query.filter().keyword()), query.limit());
         return loadTransactionPort
                 .loadByFilter(query.filter(), query.limit());
     }
 
     @Override
     public Mono<AggregatedTransactions> aggregate(AggregateTransactionsQuery query) {
-        log.debug("Aggregating transactions for account={} period={} from={} to={}",
-                query.accountId().value(), query.period(), query.from(), query.to());
+        log.debug("Aggregating transactions for account={} period={} from={} to={} customerId={}",
+                query.accountId().value(), query.period(), query.from(), query.to(),
+                query.customerId() != null ? query.customerId().value() : "admin");
         return loadTransactionPort
                 .loadByAccountIdAndPeriod(query.accountId(), query.from(), query.to())
+                .filter(tx -> query.customerId() == null ||
+                              tx.customerId().equals(query.customerId()))
                 .collectList()
                 .map(transactions -> buildAggregatedTransactions(query, transactions));
     }

@@ -7,9 +7,11 @@
         Micrometer Tracing populates 'traceId' and 'spanId' in MDC automatically
         when a span is active. They appear as '-' when no span is in scope (e.g.
         startup, background threads).
+        'requestId' is populated by CorrelationIdFilter from the X-Request-ID header
+        (or a generated UUID) and propagated via Reactor context + RequestIdMdcAccessor.
     -->
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:app},%mdc{traceId:--},%mdc{spanId:--}] [%t] %-40.40logger{39} : %m%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:app},%mdc{traceId:--},%mdc{spanId:--}] [req=%mdc{requestId:--}] [%t] %-40.40logger{39} : %m%n"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>

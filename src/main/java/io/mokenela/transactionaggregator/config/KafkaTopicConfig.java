@@ -2,6 +2,7 @@ package io.mokenela.transactionaggregator.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.mokenela.transactionaggregator.adapter.in.kafka.KafkaDltSender;
 import io.mokenela.transactionaggregator.adapter.in.kafka.KafkaTransactionEvent;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -66,6 +67,11 @@ class KafkaTopicConfig {
     KafkaTemplate<String, KafkaTransactionEvent> kafkaTemplate(
             ProducerFactory<String, KafkaTransactionEvent> producerFactory) {
         return new KafkaTemplate<>(producerFactory);
+    }
+
+    @Bean
+    KafkaDltSender kafkaDltSender(KafkaTemplate<String, KafkaTransactionEvent> kafkaTemplate) {
+        return (topic, key, event) -> kafkaTemplate.send(topic, key, event).toCompletableFuture();
     }
 
     @Bean

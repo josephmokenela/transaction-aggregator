@@ -1,0 +1,161 @@
+---
+# Deny all ingress and egress by default for the transaction-aggregator namespace.
+# Subsequent policies open only the specific paths that are required.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: transaction-aggregator
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow ingress to the app on port 8080 from the nginx ingress controller
+# (labelled app.kubernetes.io/name=ingress-nginx in the ingress-nginx namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-app
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - port: 8080
+
+---
+# Allow the app to reach PostgreSQL on port 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-postgres
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+
+---
+# Allow the app to reach Kafka on port 9093 (internal listener).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-kafka
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - port: 9093
+
+---
+# Allow the app to reach Vault on port 8200 for secret retrieval.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-vault
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: vault
+      ports:
+        - port: 8200
+
+---
+# Allow Prometheus to scrape the app on port 8080.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+
+---
+# Allow the app to reach Zipkin on port 9411 for trace export.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-zipkin
+  namespace: transaction-aggregator
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-aggregator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: zipkin
+      ports:
+        - port: 9411
+
+---
+# Allow DNS resolution for all pods (required for service discovery).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: transaction-aggregator
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

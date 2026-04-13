@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.domain.model;
 
+import io.mokenela.transactionaggregator.util.Mask;
+
 import java.time.Instant;
 
 public record Transaction(
@@ -38,5 +40,21 @@ public record Transaction(
 
     public boolean isCompleted() {
         return status == TransactionStatus.COMPLETED;
+    }
+
+    /** Masks financial and free-text fields so accidental logging never exposes PII. */
+    @Override
+    public String toString() {
+        return "Transaction[id=" + id +
+               ", customerId=" + customerId +
+               ", accountId=" + accountId +
+               ", amount=" + Mask.amount(amount.amount()) +
+               ", type=" + type +
+               ", status=" + status +
+               ", description=" + Mask.text(description) +
+               ", category=" + category +
+               ", merchantName=" + Mask.text(merchantName) +
+               ", dataSourceId=" + dataSourceId +
+               ", occurredAt=" + occurredAt + "]";
     }
 }

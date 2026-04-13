@@ -109,21 +109,31 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Deploy (placeholder) ─────────────────────────────────────────────────
-      # Uncomment once a target cluster is available and add KUBECONFIG to
-      # repository secrets (Settings → Secrets → Actions).
-      #
-      # The recommended approach is a dedicated service account with a RoleBinding
-      # scoped to the transaction-aggregator namespace — not a cluster-admin kubeconfig.
-      #
-      # - name: Deploy to Kubernetes
-      #   env:
-      #     KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
-      #   run: |
-      #     echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig
-      #     export KUBECONFIG=/tmp/kubeconfig
-      #     kubectl set image deployment/transaction-aggregator \
-      #       transaction-aggregator=${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
-      #       -n transaction-aggregator
-      #     kubectl rollout status deployment/transaction-aggregator \
-      #       -n transaction-aggregator --timeout=120s
+      # ── Validate k8s manifests ────────────────────────────────────────────────
+      # Client-side dry-run validates all manifests against the Kubernetes API schema
+      # without needing a live cluster. Catches YAML errors and invalid field names.
+      - name: Validate Kubernetes manifests
+        run: |
+          curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl apply --dry-run=client -f k8s/namespace.yaml
+          kubectl apply --dry-run=client -f k8s/postgres/
+          kubectl apply --dry-run=client -f k8s/app/
+          kubectl apply --dry-run=client -f k8s/network-policy.yaml
+
+      # ── Deploy to Kubernetes ──────────────────────────────────────────────────
+      # Requires KUBECONFIG secret in repository settings (Settings → Secrets → Actions).
+      # Use a dedicated service account with a RoleBinding scoped to the
+      # transaction-aggregator namespace — not a cluster-admin kubeconfig.
+      - name: Deploy to Kubernetes
+        if: ${{ secrets.KUBECONFIG != '' }}
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl set image deployment/transaction-aggregator \
+            transaction-aggregator=${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+            -n transaction-aggregator
+          kubectl rollout status deployment/transaction-aggregator \
+            -n transaction-aggregator --timeout=120s

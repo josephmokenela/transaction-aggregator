@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.adapter.in.kafka;
 
+import io.mokenela.transactionaggregator.util.Mask;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -18,4 +20,19 @@ public record KafkaTransactionEvent(
         String description,
         String merchantName,
         Instant occurredAt
-) {}
+) {
+
+    @Override
+    public String toString() {
+        return "KafkaTransactionEvent[id=" + id +
+               ", customerId=" + customerId +
+               ", accountId=" + accountId +
+               ", amount=" + Mask.amount(amount) +
+               ", currencyCode=" + currencyCode +
+               ", type=" + type +
+               ", status=" + status +
+               ", description=" + Mask.text(description) +
+               ", merchantName=" + Mask.text(merchantName) +
+               ", occurredAt=" + occurredAt + "]";
+    }
+}

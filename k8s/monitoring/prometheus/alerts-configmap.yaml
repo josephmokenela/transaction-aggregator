@@ -80,6 +80,55 @@ data:
               summary: "Plaid circuit breaker has opened"
               description: "The Plaid circuit breaker transitioned to OPEN. Plaid sync is suspended until the breaker recovers."
 
+      - name: kafka
+        rules:
+          - alert: KafkaConsumerLagHigh
+            expr: |
+              kafka_consumer_fetch_manager_records_lag_max{
+                topic="transactions"
+              } > 1000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Kafka consumer lag is high (topic: {{ $labels.topic }})"
+              description: >
+                Consumer group 'transaction-aggregator' is {{ $value | humanize }} record(s)
+                behind on topic {{ $labels.topic }} (partition: {{ $labels.partition }}).
+                Sustained for 5 minutes — the consumer may be slow or under-provisioned.
+                Check GC pressure, R2DBC pool saturation, and thread concurrency settings.
+
+          - alert: KafkaConsumerLagCritical
+            expr: |
+              kafka_consumer_fetch_manager_records_lag_max{
+                topic="transactions"
+              } > 5000
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Kafka consumer lag is critical (topic: {{ $labels.topic }})"
+              description: >
+                Consumer group 'transaction-aggregator' is {{ $value | humanize }} record(s)
+                behind on topic {{ $labels.topic }} (partition: {{ $labels.partition }}).
+                At this lag the consumer is unlikely to catch up without intervention.
+                Consider scaling the consumer or pausing ingestion until the backlog clears.
+
+          - alert: KafkaConsumerLagGrowing
+            expr: |
+              deriv(
+                kafka_consumer_fetch_manager_records_lag_max{topic="transactions"}[10m]
+              ) > 0
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Kafka consumer lag is continuously growing (topic: {{ $labels.topic }})"
+              description: >
+                Lag on topic {{ $labels.topic }} (partition: {{ $labels.partition }}) has been
+                increasing for 10 minutes. The consumer is not keeping up with the producer rate.
+                Investigate consumer throughput, R2DBC latency, and check KafkaDeadLetterMessages.
+
       - name: database
         rules:
           - alert: R2dbcConnectionPoolPressure

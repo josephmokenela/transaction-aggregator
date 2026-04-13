@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.domain.model;
 
+import io.mokenela.transactionaggregator.util.Mask;
+
 import java.time.Instant;
 
 /**
@@ -42,5 +44,17 @@ public record TransactionFilter(
         public TransactionFilter build() {
             return new TransactionFilter(customerId, accountId, category, type, dataSourceId, keyword, from, to);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "TransactionFilter[customerId=" + customerId +
+               ", accountId=" + accountId +
+               ", category=" + category +
+               ", type=" + type +
+               ", dataSourceId=" + dataSourceId +
+               ", keyword=" + Mask.text(keyword) +
+               ", from=" + from +
+               ", to=" + to + "]";
     }
 }

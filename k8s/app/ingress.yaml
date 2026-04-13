@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: transaction-aggregator
+  namespace: transaction-aggregator
+  annotations:
+    # nginx ingress controller — install with:
+    # kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Enforce HTTPS — redirect HTTP to HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Increase proxy timeouts for long-running sync operations
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - transaction-aggregator.local
+      # Create the TLS secret separately:
+      # kubectl create secret tls transaction-aggregator-tls \
+      #   --cert=path/to/tls.crt --key=path/to/tls.key \
+      #   -n transaction-aggregator
+      secretName: transaction-aggregator-tls
+  rules:
+    - host: transaction-aggregator.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: transaction-aggregator
+                port:
+                  number: 8080

@@ -23,9 +23,15 @@ spec:
             - name: POSTGRES_DB
               value: transaction_aggregator
             - name: POSTGRES_USER
-              value: postgres
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
             - name: POSTGRES_PASSWORD
-              value: postgres
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres", "-d", "transaction_aggregator"]

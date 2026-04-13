@@ -8,7 +8,7 @@ public record ErrorResponse(
         Instant timestamp
 ) {
 
-    static ErrorResponse of(String errorCode, String message) {
+    public static ErrorResponse of(String errorCode, String message) {
         return new ErrorResponse(errorCode, message, Instant.now());
     }
 }

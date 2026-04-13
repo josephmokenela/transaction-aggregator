@@ -141,9 +141,12 @@ class TransactionController {
             @Parameter(description = "Account UUID", required = true) @RequestParam String accountId,
             @Parameter(description = "Aggregation granularity", required = true) @RequestParam AggregationPeriod period,
             @Parameter(description = "Range start (ISO-8601)", required = true) @RequestParam Instant from,
-            @Parameter(description = "Range end (ISO-8601)", required = true) @RequestParam Instant to) {
+            @Parameter(description = "Range end (ISO-8601)", required = true) @RequestParam Instant to,
+            @AuthenticationPrincipal Jwt jwt) {
 
-        var query = new AggregateTransactionsQuery(AccountId.of(accountId), period, from, to);
+        // Customers are scoped to their own data; admins may aggregate any account
+        var customerId = JwtUtils.isAdmin(jwt) ? null : JwtUtils.customerId(jwt);
+        var query = new AggregateTransactionsQuery(AccountId.of(accountId), period, from, to, customerId);
         return aggregateTransactionsUseCase.aggregate(query).map(AggregatedTransactionsResponse::from);
     }
 }

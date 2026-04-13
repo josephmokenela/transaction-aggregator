@@ -2,6 +2,7 @@ package io.mokenela.transactionaggregator.domain.port.in;
 
 import io.mokenela.transactionaggregator.domain.model.AccountId;
 import io.mokenela.transactionaggregator.domain.model.AggregationPeriod;
+import io.mokenela.transactionaggregator.domain.model.CustomerId;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -10,7 +11,8 @@ public record AggregateTransactionsQuery(
         AccountId accountId,
         AggregationPeriod period,
         Instant from,
-        Instant to
+        Instant to,
+        CustomerId customerId  // null for admins (unscoped); set for customers to enforce ownership
 ) {
 
     public AggregateTransactionsQuery {
