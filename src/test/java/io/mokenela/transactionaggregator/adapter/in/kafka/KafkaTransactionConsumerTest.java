@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.support.Acknowledgment;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -29,6 +30,9 @@ class KafkaTransactionConsumerTest {
 
     @Mock
     KafkaDltSender dltSender;
+
+    @Mock
+    Acknowledgment acknowledgment;
 
     // Real instances — no dependencies, pure logic
     private final TransactionCategorizationService categorizationService = new TransactionCategorizationService();
@@ -52,7 +56,7 @@ class KafkaTransactionConsumerTest {
         var events = List.of(validEvent(), validEvent(), validEvent());
         when(saveTransactionPort.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
-        consumer.consume(events);
+        consumer.consume(events, acknowledgment);
 
         verify(saveTransactionPort, timeout(2000).times(3)).save(any());
         verifyNoInteractions(dltSender);
@@ -63,7 +67,7 @@ class KafkaTransactionConsumerTest {
         var event = eventWith("Monthly salary payment", "Employer Ltd", "CREDIT");
         when(saveTransactionPort.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
-        consumer.consume(List.of(event));
+        consumer.consume(List.of(event), acknowledgment);
 
         verify(saveTransactionPort, timeout(2000)).save(
                 argThat(tx -> tx.category() == TransactionCategory.SALARY)
@@ -72,7 +76,7 @@ class KafkaTransactionConsumerTest {
 
     @Test
     void consume_shouldCompleteWithoutError_forEmptyBatch() {
-        consumer.consume(List.of());
+        consumer.consume(List.of(), acknowledgment);
 
         verifyNoInteractions(saveTransactionPort);
         verifyNoInteractions(dltSender);
@@ -85,7 +89,7 @@ class KafkaTransactionConsumerTest {
         var badEvent = eventWithInvalidType();
         mockDlt();
 
-        consumer.consume(List.of(badEvent));
+        consumer.consume(List.of(badEvent), acknowledgment);
 
         // save should never be attempted — mapping fails before reaching the port
         verify(dltSender, timeout(2000)).send(eq(DLT_TOPIC), eq(badEvent.id()), eq(badEvent));
@@ -97,7 +101,7 @@ class KafkaTransactionConsumerTest {
         var badEvent = eventWithInvalidType();
         mockDlt();
 
-        consumer.consume(List.of(badEvent));
+        consumer.consume(List.of(badEvent), acknowledgment);
 
         verify(dltSender, timeout(2000)).send(anyString(), anyString(), any());
         var counter = meterRegistry.find("kafka.messages.dropped")
@@ -116,7 +120,7 @@ class KafkaTransactionConsumerTest {
                 .thenReturn(Mono.error(new RuntimeException("R2DBC Connection refused")));
         mockDlt();
 
-        consumer.consume(List.of(event));
+        consumer.consume(List.of(event), acknowledgment);
 
         // Mono.defer() ensures each retry re-calls save() on the port, so we can
         // assert exact call count: initial attempt + 3 retries = 4 total
@@ -131,7 +135,7 @@ class KafkaTransactionConsumerTest {
                 .thenReturn(Mono.error(new RuntimeException("Constraint violation — duplicate key")));
         mockDlt();
 
-        consumer.consume(List.of(event));
+        consumer.consume(List.of(event), acknowledgment);
 
         // non-transient: filter rejects the error, no retries — exactly one save attempt
         verify(saveTransactionPort, timeout(2000).times(1)).save(any());
@@ -145,7 +149,7 @@ class KafkaTransactionConsumerTest {
                 .thenReturn(Mono.error(new RuntimeException("Constraint violation")));
         mockDlt();
 
-        consumer.consume(List.of(event));
+        consumer.consume(List.of(event), acknowledgment);
 
         verify(dltSender, timeout(2000)).send(anyString(), anyString(), any());
         var counter = meterRegistry.find("kafka.messages.dropped")
@@ -165,7 +169,7 @@ class KafkaTransactionConsumerTest {
         when(saveTransactionPort.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         mockDlt();
 
-        consumer.consume(List.of(valid1, invalid, valid2));
+        consumer.consume(List.of(valid1, invalid, valid2), acknowledgment);
 
         verify(saveTransactionPort, timeout(2000).times(2)).save(any());
         verify(dltSender, timeout(2000).times(1)).send(eq(DLT_TOPIC), anyString(), any());

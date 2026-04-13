@@ -5,6 +5,9 @@ import io.mokenela.transactionaggregator.domain.port.in.PagedResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
 
+import java.util.concurrent.Executors;
+import java.util.stream.IntStream;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CustomerControllerIT extends AbstractWebIntegrationTest {
@@ -169,5 +172,32 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
                 .header("Authorization", "Bearer " + token)
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    // ── concurrency ────────────────────────────────────────────────────────────
+
+    @Test
+    void getCustomerSummary_shouldReturn200_forAllConcurrentRequests() throws Exception {
+        var token = customerToken(ALICE);
+        var uri   = "/api/v1/customers/" + ALICE + "/summary" + DATE_RANGE;
+
+        // Fire 10 requests in parallel using virtual threads (Java 21).
+        // Verifies the reactive pipeline handles concurrent load without data races,
+        // connection pool exhaustion, or circuit breaker false-positives.
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = IntStream.range(0, 10)
+                    .mapToObj(i -> executor.submit(() ->
+                            webTestClient.get()
+                                    .uri(uri)
+                                    .header("Authorization", "Bearer " + token)
+                                    .exchange()
+                                    .expectStatus().isOk()
+                    ))
+                    .toList();
+
+            for (var future : futures) {
+                future.get(); // propagates any assertion error from the worker thread
+            }
+        }
     }
 }

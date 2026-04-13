@@ -6,11 +6,13 @@ import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import io.mokenela.transactionaggregator.domain.port.out.SaveTransactionPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,6 +117,79 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
                         .then(loadTransactionPort.loadById(tx.id()))
         )
                 .assertNext(loaded -> assertThat(loaded.id()).isEqualTo(tx.id()))
+                .verifyComplete();
+    }
+
+    @Test
+    void save_shouldBeIdempotent_underConcurrentSaves() {
+        var tx = sampleTransaction(TransactionType.CREDIT, "250.00", TransactionCategory.SALARY);
+
+        // Fire 5 concurrent saves of the identical transaction — the upsert constraint
+        // must ensure exactly one row exists regardless of interleaving.
+        StepVerifier.create(
+                Flux.range(0, 5)
+                        .flatMap(i -> saveTransactionPort.save(tx))
+                        .then(loadTransactionPort.loadById(tx.id()))
+        )
+                .assertNext(loaded -> {
+                    assertThat(loaded.id()).isEqualTo(tx.id());
+                    assertThat(loaded.amount().amount()).isEqualByComparingTo("250.00");
+                })
+                .verifyComplete();
+    }
+
+    // ── aggregateByFilter ─────────────────────────────────────────────────────
+
+    @Test
+    void aggregateByFilter_shouldReturnGroupedTotals_withCorrectCountsAndAmounts() {
+        var accountId = new AccountId(UUID.randomUUID());
+        var now = Instant.now();
+
+        var salary  = sampleTransactionAt(accountId, TransactionType.CREDIT, "3500.00", TransactionCategory.SALARY, now);
+        var food1   = sampleTransactionAt(accountId, TransactionType.DEBIT,   "50.00", TransactionCategory.FOOD_AND_DINING, now);
+        var food2   = sampleTransactionAt(accountId, TransactionType.DEBIT,   "30.00", TransactionCategory.FOOD_AND_DINING, now);
+
+        var filter = TransactionFilter.builder()
+                .customerId(CUSTOMER_ID)
+                .from(now.minus(1, ChronoUnit.HOURS))
+                .to(now.plus(1, ChronoUnit.HOURS))
+                .build();
+
+        StepVerifier.create(
+                saveTransactionPort.save(salary)
+                        .then(saveTransactionPort.save(food1))
+                        .then(saveTransactionPort.save(food2))
+                        .thenMany(loadTransactionPort.aggregateByFilter(filter))
+        )
+                .recordWith(ArrayList::new)
+                .thenConsumeWhile(a -> true)
+                .consumeRecordedWith(aggregates -> {
+                    var salaryAgg = aggregates.stream()
+                            .filter(a -> a.category() == TransactionCategory.SALARY
+                                      && a.type()     == TransactionType.CREDIT)
+                            .findFirst().orElseThrow(() -> new AssertionError("SALARY aggregate missing"));
+                    assertThat(salaryAgg.totalAmount().amount()).isEqualByComparingTo("3500.00");
+                    assertThat(salaryAgg.count()).isEqualTo(1);
+
+                    var foodAgg = aggregates.stream()
+                            .filter(a -> a.category() == TransactionCategory.FOOD_AND_DINING
+                                      && a.type()     == TransactionType.DEBIT)
+                            .findFirst().orElseThrow(() -> new AssertionError("FOOD aggregate missing"));
+                    assertThat(foodAgg.totalAmount().amount()).isEqualByComparingTo("80.00");
+                    assertThat(foodAgg.count()).isEqualTo(2);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void aggregateByFilter_shouldReturnEmpty_whenNoTransactionsMatchFilter() {
+        var filter = TransactionFilter.builder()
+                .customerId(CUSTOMER_ID)
+                .from(Instant.parse("2000-01-01T00:00:00Z"))
+                .to(Instant.parse("2000-01-02T00:00:00Z"))
+                .build();
+
+        StepVerifier.create(loadTransactionPort.aggregateByFilter(filter))
                 .verifyComplete();
     }
 

@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.adapter.out.persistence;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import io.mokenela.transactionaggregator.domain.model.Customer;
 import io.mokenela.transactionaggregator.domain.model.CustomerId;
 import io.mokenela.transactionaggregator.domain.port.in.PageRequest;
@@ -18,18 +20,23 @@ class CustomerPersistenceAdapter implements LoadCustomerPort {
     private final R2dbcCustomerRepository repository;
     private final DatabaseClient databaseClient;
     private final CustomerEntityMapper mapper;
+    private final CircuitBreaker circuitBreaker;
 
     CustomerPersistenceAdapter(R2dbcCustomerRepository repository,
                                DatabaseClient databaseClient,
-                               CustomerEntityMapper mapper) {
+                               CustomerEntityMapper mapper,
+                               CircuitBreaker databaseCircuitBreaker) {
         this.repository = repository;
         this.databaseClient = databaseClient;
         this.mapper = mapper;
+        this.circuitBreaker = databaseCircuitBreaker;
     }
 
     @Override
     public Mono<Customer> loadById(CustomerId customerId) {
-        return repository.findById(customerId.value()).map(mapper::toDomain);
+        return repository.findById(customerId.value())
+                .map(mapper::toDomain)
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     @Override
@@ -53,11 +60,13 @@ class CustomerPersistenceAdapter implements LoadCustomerPort {
                 .map((row, meta) -> row.get(0, Long.class))
                 .one();
 
-        return contentMono.zipWith(countMono).map(tuple -> {
-            long total = tuple.getT2();
-            long totalPages = (long) Math.ceil((double) total / pageRequest.size());
-            return new PagedResponse<>(tuple.getT1(), pageRequest.page(), pageRequest.size(),
-                    total, totalPages);
-        });
+        return contentMono.zipWith(countMono)
+                .map(tuple -> {
+                    long total = tuple.getT2();
+                    long totalPages = (long) Math.ceil((double) total / pageRequest.size());
+                    return new PagedResponse<>(tuple.getT1(), pageRequest.page(), pageRequest.size(),
+                            total, totalPages);
+                })
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 }
