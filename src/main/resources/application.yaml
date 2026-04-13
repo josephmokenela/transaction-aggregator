@@ -1,6 +1,11 @@
+server:
+  shutdown: graceful  # Wait for in-flight requests to complete before stopping
+
 spring:
   application:
     name: transaction-aggregator
+  lifecycle:
+    timeout-per-shutdown-phase: 30s  # Max time to wait for active requests to finish
   jackson:
     default-property-inclusion: non_null
   config:
@@ -43,6 +48,12 @@ spring:
 
 app:
   default-currency: GBP
+  aggregation:
+    # Maximum transactions loaded into memory when computing a customer summary.
+    # Raise via MAX_TRANSACTIONS env var for high-volume accounts; logs a warning when hit.
+    max-transactions-per-summary: ${MAX_TRANSACTIONS:10000}
+    # Logs an info-level notice when a customer is approaching the limit.
+    warn-threshold: ${WARN_THRESHOLD:5000}
   kafka:
     enabled: ${APP_KAFKA_ENABLED:false}
     topic: transactions

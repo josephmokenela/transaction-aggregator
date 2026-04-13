@@ -278,6 +278,79 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <!-- Instruments bytecode so coverage data is collected during 'test' phase.
+                         'includes' scopes instrumentation to project classes only — prevents
+                         JaCoCo from trying to instrument JDK/library classes built with a
+                         newer class-file version than JaCoCo supports. -->
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                        <configuration>
+                            <includes>io/mokenela/**</includes>
+                        </configuration>
+                    </execution>
+                    <!-- Generates HTML + XML coverage report under target/site/jacoco/ -->
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                    <!-- Coverage gates:
+                         - Overall bundle: 75% line coverage
+                         - Service layer (business logic): 90% line coverage
+                         Config/wiring and adapter layers are excluded or held to the lower bar
+                         because meaningful coverage there requires integration tests with live
+                         infrastructure (DB, Kafka), not unit tests. -->
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <!-- Overall gate — catches regressions across the whole codebase -->
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.75</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <!-- Service layer gate — this is where business logic lives;
+                                     bugs here have the highest impact so we hold it to a higher bar -->
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>io/mokenela/transactionaggregator/application/service</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                            <excludes>
+                                <!-- Generated / framework code not worth measuring -->
+                                <exclude>io/mokenela/transactionaggregator/TransactionAggregatorApplication.class</exclude>
+                                <exclude>io/mokenela/transactionaggregator/adapter/in/web/*Response.class</exclude>
+                                <exclude>io/mokenela/transactionaggregator/adapter/in/web/*Request.class</exclude>
+                                <exclude>io/mokenela/transactionaggregator/domain/model/*.class</exclude>
+                                <exclude>io/mokenela/transactionaggregator/domain/port/**/*.class</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

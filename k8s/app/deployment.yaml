@@ -50,6 +50,8 @@ spec:
                 echo "Waiting for Vault secrets..."; sleep 3
               done
 
+      # Allow 45s for shutdown: 30s Spring graceful shutdown + 15s buffer for load balancer de-registration
+      terminationGracePeriodSeconds: 45
       containers:
         - name: transaction-aggregator
           image: transaction-aggregator:latest
@@ -60,6 +62,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: transaction-aggregator-config
+          lifecycle:
+            preStop:
+              exec:
+                # Give the load balancer 5 seconds to stop routing new traffic before Spring starts shutting down
+                command: ["/bin/sh", "-c", "sleep 5"]
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

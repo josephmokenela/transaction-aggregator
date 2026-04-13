@@ -3,6 +3,9 @@ package io.mokenela.transactionaggregator.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import io.mokenela.transactionaggregator.adapter.in.web.ErrorResponse;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,11 +37,54 @@ import java.util.Optional;
 @EnableWebFluxSecurity
 class SecurityConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+
+    private static final List<String> WEAK_SECRET_MARKERS = List.of("local-dev-only", "local-dev-admin", "change-me");
+
     @Value("${app.security.jwt.secret}")
     private String jwtSecret;
 
+    @Value("${app.security.jwt.admin-secret}")
+    private String adminSecret;
+
+    @Value("${spring.profiles.active:default}")
+    private String activeProfiles;
+
     @Value("${app.security.cors.allowed-origins:http://localhost:3000,http://localhost:4200}")
     private List<String> allowedOrigins;
+
+    /**
+     * Fails fast if weak/default JWT secrets are detected in non-development profiles.
+     * Allows easy local development while preventing accidental production deployment with insecure defaults.
+     */
+    @PostConstruct
+    void validateSecrets() {
+        boolean isDevProfile = activeProfiles.contains("default") || activeProfiles.contains("dev");
+        if (isDevProfile) {
+            if (WEAK_SECRET_MARKERS.stream().anyMatch(jwtSecret::contains)) {
+                log.warn("Running with default JWT secret in dev profile — do NOT use in production");
+            }
+            return;
+        }
+
+        // Fail fast in docker / prod / staging profiles
+        if (WEAK_SECRET_MARKERS.stream().anyMatch(jwtSecret::contains)) {
+            throw new IllegalStateException(
+                    "SECURITY: Weak JWT secret detected in profile '" + activeProfiles + "'. " +
+                    "Set JWT_SECRET to a strong random value (openssl rand -base64 32).");
+        }
+        if (WEAK_SECRET_MARKERS.stream().anyMatch(adminSecret::contains)) {
+            throw new IllegalStateException(
+                    "SECURITY: Weak JWT admin secret detected in profile '" + activeProfiles + "'. " +
+                    "Set JWT_ADMIN_SECRET to a strong random value.");
+        }
+        if (jwtSecret.length() < 32) {
+            throw new IllegalStateException(
+                    "JWT secret must be at least 32 characters (256 bits). Current length: " + jwtSecret.length());
+        }
+
+        log.info("JWT secrets validated for profile '{}'", activeProfiles);
+    }
 
     @Bean
     SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http,
