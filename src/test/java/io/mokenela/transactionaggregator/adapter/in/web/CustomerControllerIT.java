@@ -1,7 +1,9 @@
 package io.mokenela.transactionaggregator.adapter.in.web;
 
 import io.mokenela.transactionaggregator.AbstractWebIntegrationTest;
+import io.mokenela.transactionaggregator.domain.port.in.PagedResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.ParameterizedTypeReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,15 +34,57 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
     }
 
     @Test
-    void listCustomers_shouldReturn200_forAdminToken() {
+    void listCustomers_shouldReturn200_forAdminToken_withPagedResponse() {
         var token = adminToken();
         webTestClient.get()
                 .uri("/api/v1/customers")
                 .header("Authorization", "Bearer " + token)
                 .exchange()
                 .expectStatus().isOk()
-                .expectBodyList(CustomerResponse.class)
-                .value(customers -> assertThat(customers).isNotEmpty());
+                .expectBody(new ParameterizedTypeReference<PagedResponse<CustomerResponse>>() {})
+                .value(paged -> {
+                    assertThat(paged).isNotNull();
+                    assertThat(paged.content()).isNotEmpty();
+                    assertThat(paged.page()).isZero();
+                    assertThat(paged.size()).isEqualTo(20);
+                    assertThat(paged.totalElements()).isPositive();
+                    assertThat(paged.totalPages()).isPositive();
+                });
+    }
+
+    @Test
+    void listCustomers_shouldRespectPageAndSizeParams() {
+        var token = adminToken();
+        webTestClient.get()
+                .uri("/api/v1/customers?page=0&size=1")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<PagedResponse<CustomerResponse>>() {})
+                .value(paged -> {
+                    assertThat(paged.content()).hasSize(1);
+                    assertThat(paged.size()).isEqualTo(1);
+                });
+    }
+
+    @Test
+    void listCustomers_shouldReturn400_whenSizeExceedsMax() {
+        var token = adminToken();
+        webTestClient.get()
+                .uri("/api/v1/customers?size=101")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
+    @Test
+    void listCustomers_shouldReturn400_whenPageIsNegative() {
+        var token = adminToken();
+        webTestClient.get()
+                .uri("/api/v1/customers?page=-1")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isBadRequest();
     }
 
     // ── GET /api/v1/customers/{id}/summary ─────────────────────────────────────

@@ -44,10 +44,20 @@ class CustomerController {
 
     @GetMapping
     @Operation(summary = "List all customers (admin only)",
+               description = "Returns a paginated list of customers. Defaults to page 0 with 20 results per page.",
                security = @SecurityRequirement(name = "bearerAuth"))
-    Flux<CustomerResponse> listCustomers() {
-        // Access restricted to ROLE_ADMIN by SecurityConfig path rule
-        return listCustomersUseCase.listCustomers().map(CustomerResponse::from);
+    Mono<PagedResponse<CustomerResponse>> listCustomers(
+            @Parameter(description = "Zero-based page number") @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Parameter(description = "Page size (1–100)") @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        var pageRequest = new PageRequest(page, size);
+        return listCustomersUseCase.listCustomers(pageRequest)
+                .map(paged -> new PagedResponse<>(
+                        paged.content().stream().map(CustomerResponse::from).toList(),
+                        paged.page(),
+                        paged.size(),
+                        paged.totalElements(),
+                        paged.totalPages()
+                ));
     }
 
     @GetMapping("/{customerId}/summary")

@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM eclipse-temurin:25-jdk AS builder
+FROM amazoncorretto:21 AS builder
 WORKDIR /app
 
 # Copy wrapper + POM first so the dependency layer is cached independently
@@ -15,14 +15,14 @@ RUN ./mvnw package -DskipTests -q
 RUN java -Djarmode=layertools -jar target/*.jar extract --destination target/extracted
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM eclipse-temurin:25-jre AS runtime
+FROM amazoncorretto:21-jre AS runtime
 WORKDIR /app
 
-# Install curl for the HEALTHCHECK probe
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Install curl for the HEALTHCHECK probe (Amazon Linux 2023 uses dnf)
+RUN dnf install -y curl && dnf clean all
 
-# Non-root user for least-privilege execution
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+# Non-root user for least-privilege execution (Amazon Linux uses groupadd/useradd)
+RUN groupadd -r appgroup && useradd -r -g appgroup -s /sbin/nologin appuser
 
 # Copy layers in order — least-volatile first so Docker reuses cache efficiently
 COPY --from=builder /app/target/extracted/dependencies/          ./

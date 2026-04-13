@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -29,21 +30,29 @@ public class CustomerQueryService
     private final LoadCustomerPort loadCustomerPort;
     private final LoadTransactionPort loadTransactionPort;
     private final Currency defaultCurrency;
+    private final int maxTransactionsPerSummary;
+    private final int warnThreshold;
 
     public CustomerQueryService(LoadCustomerPort loadCustomerPort,
                                 LoadTransactionPort loadTransactionPort,
-                                @Value("${app.default-currency:GBP}") String defaultCurrencyCode) {
+                                @Value("${app.default-currency:GBP}") String defaultCurrencyCode,
+                                @Value("${app.aggregation.max-transactions-per-summary:10000}") int maxTransactionsPerSummary,
+                                @Value("${app.aggregation.warn-threshold:5000}") int warnThreshold) {
         this.loadCustomerPort = loadCustomerPort;
         this.loadTransactionPort = loadTransactionPort;
         this.defaultCurrency = Currency.getInstance(defaultCurrencyCode);
+        this.maxTransactionsPerSummary = maxTransactionsPerSummary;
+        this.warnThreshold = warnThreshold;
     }
 
     @Override
-    public Flux<Customer> listCustomers() {
-        return loadCustomerPort.loadAll();
+    @Transactional(readOnly = true)
+    public Mono<PagedResponse<Customer>> listCustomers(PageRequest pageRequest) {
+        return loadCustomerPort.loadAll(pageRequest);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Mono<CustomerSummary> getCustomerSummary(GetCustomerSummaryQuery query) {
         log.debug("Building summary for customer={} from={} to={}",
                 query.customerId().value(), query.from(), query.to());
@@ -56,12 +65,22 @@ public class CustomerQueryService
 
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMap(customer -> loadTransactionPort.loadByFilter(filter, 10_000)
+                .flatMap(customer -> loadTransactionPort.loadByFilter(filter, maxTransactionsPerSummary)
                         .collectList()
+                        .doOnNext(transactions -> {
+                            if (transactions.size() >= maxTransactionsPerSummary) {
+                                log.warn("Customer {} hit transaction limit ({}) for summary — results truncated",
+                                        customer.id().value(), maxTransactionsPerSummary);
+                            } else if (transactions.size() >= warnThreshold) {
+                                log.info("Customer {} approaching transaction limit: {}/{}",
+                                        customer.id().value(), transactions.size(), maxTransactionsPerSummary);
+                            }
+                        })
                         .map(transactions -> buildCustomerSummary(customer, query, transactions)));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Flux<CategorySummary> getCategorySummary(GetCategorySummaryQuery query) {
         log.debug("Building category breakdown for customer={} from={} to={}",
                 query.customerId().value(), query.from(), query.to());
@@ -72,10 +91,9 @@ public class CustomerQueryService
                 .to(query.to())
                 .build();
 
-        // Verify the customer exists before computing the summary
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMapMany(ignored -> loadTransactionPort.loadByFilter(filter, 10_000)
+                .flatMapMany(ignored -> loadTransactionPort.loadByFilter(filter, maxTransactionsPerSummary)
                         .collectList()
                         .flatMapIterable(this::buildCategorySummaries));
     }
@@ -126,7 +144,6 @@ public class CustomerQueryService
         var currencyCode = transactions.getFirst().amount().currency().getCurrencyCode();
         var zero = Money.zero(currencyCode);
 
-        // Grand total across all transactions (used as the denominator for percentages)
         var grandTotal = transactions.stream()
                 .map(t -> t.amount().amount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);

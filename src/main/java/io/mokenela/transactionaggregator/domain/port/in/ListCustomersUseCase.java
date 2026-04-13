@@ -1,8 +1,8 @@
 package io.mokenela.transactionaggregator.domain.port.in;
 
 import io.mokenela.transactionaggregator.domain.model.Customer;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public interface ListCustomersUseCase {
-    Flux<Customer> listCustomers();
+    Mono<PagedResponse<Customer>> listCustomers(PageRequest pageRequest);
 }

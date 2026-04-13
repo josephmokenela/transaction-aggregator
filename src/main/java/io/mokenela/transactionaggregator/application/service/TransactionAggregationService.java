@@ -10,6 +10,7 @@ import io.mokenela.transactionaggregator.util.Mask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -46,6 +47,7 @@ public class TransactionAggregationService
     }
 
     @Override
+    @Transactional
     public Mono<Transaction> recordTransaction(RecordTransactionCommand command) {
         var category = categorizationService.categorize(command.description(), command.merchantName());
         var transaction = new Transaction(
@@ -73,12 +75,14 @@ public class TransactionAggregationService
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Mono<Transaction> getTransaction(GetTransactionQuery query) {
         return loadTransactionPort.loadById(query.transactionId())
                 .switchIfEmpty(Mono.error(new TransactionNotFoundException(query.transactionId())));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Flux<Transaction> search(SearchTransactionsQuery query) {
         log.debug("Searching transactions with filter: customerId={} category={} keyword={} limit={}",
                 query.filter().customerId(), query.filter().category(),
@@ -88,6 +92,7 @@ public class TransactionAggregationService
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Mono<AggregatedTransactions> aggregate(AggregateTransactionsQuery query) {
         log.debug("Aggregating transactions for account={} period={} from={} to={} customerId={}",
                 query.accountId().value(), query.period(), query.from(), query.to(),
