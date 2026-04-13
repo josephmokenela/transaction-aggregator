@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
+import org.springframework.r2dbc.connection.R2dbcTransactionManager;
+import org.springframework.transaction.ReactiveTransactionManager;
 
 import javax.sql.DataSource;
 import java.time.Duration;
@@ -98,5 +100,22 @@ class PostgresConfig {
                 .build();
 
         return new ConnectionPool(poolConfig);
+    }
+
+    /**
+     * Explicit R2DBC transaction manager, marked {@code @Primary} so that
+     * {@code @Transactional} on reactive methods unambiguously resolves to this
+     * bean instead of the JDBC {@code transactionManager} created by
+     * {@code DataSourceTransactionManagerAutoConfiguration} for Flyway.
+     *
+     * <p>Declaring it here also satisfies
+     * {@code R2dbcTransactionManagerAutoConfiguration}'s
+     * {@code @ConditionalOnMissingBean(ReactiveTransactionManager.class)},
+     * preventing a duplicate {@code connectionFactoryTransactionManager} bean.
+     */
+    @Bean
+    @Primary
+    ReactiveTransactionManager reactiveTransactionManager(ConnectionFactory connectionFactory) {
+        return new R2dbcTransactionManager(connectionFactory);
     }
 }

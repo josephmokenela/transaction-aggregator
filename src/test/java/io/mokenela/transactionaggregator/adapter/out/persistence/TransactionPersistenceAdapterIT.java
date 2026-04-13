@@ -149,8 +149,11 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
         var food1   = sampleTransactionAt(accountId, TransactionType.DEBIT,   "50.00", TransactionCategory.FOOD_AND_DINING, now);
         var food2   = sampleTransactionAt(accountId, TransactionType.DEBIT,   "30.00", TransactionCategory.FOOD_AND_DINING, now);
 
+        // Scope by accountId so transactions saved by other test methods for the same
+        // CUSTOMER_ID (e.g. save_shouldPersistTransaction) don't pollute this aggregate.
         var filter = TransactionFilter.builder()
                 .customerId(CUSTOMER_ID)
+                .accountId(accountId)
                 .from(now.minus(1, ChronoUnit.HOURS))
                 .to(now.plus(1, ChronoUnit.HOURS))
                 .build();
