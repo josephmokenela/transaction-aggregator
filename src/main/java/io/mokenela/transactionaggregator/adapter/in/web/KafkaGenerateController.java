@@ -1,7 +1,7 @@
 package io.mokenela.transactionaggregator.adapter.in.web;
 
-import io.mokenela.transactionaggregator.adapter.out.kafka.KafkaTransactionProducer;
 import io.mokenela.transactionaggregator.domain.model.CustomerId;
+import io.mokenela.transactionaggregator.domain.port.out.TransactionGeneratorPort;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
@@ -17,14 +17,14 @@ import reactor.core.publisher.Mono;
 @Validated
 @RestController
 @RequestMapping("/api/v1/kafka")
-@ConditionalOnBean(KafkaTransactionProducer.class)
+@ConditionalOnBean(TransactionGeneratorPort.class)
 @Tag(name = "Kafka", description = "Simulate high-volume transaction ingestion via Kafka")
 class KafkaGenerateController {
 
-    private final KafkaTransactionProducer producer;
+    private final TransactionGeneratorPort generator;
 
-    KafkaGenerateController(KafkaTransactionProducer producer) {
-        this.producer = producer;
+    KafkaGenerateController(TransactionGeneratorPort generator) {
+        this.generator = generator;
     }
 
     @PostMapping("/generate")
@@ -37,7 +37,7 @@ class KafkaGenerateController {
             @RequestParam String customerId,
             @RequestParam(defaultValue = "100") @Min(1) @Max(10_000) int count) {
 
-        return producer.generate(CustomerId.of(customerId), count)
+        return generator.generate(CustomerId.of(customerId), count)
                 .map(published -> new GenerateResponse(customerId, published));
     }
 

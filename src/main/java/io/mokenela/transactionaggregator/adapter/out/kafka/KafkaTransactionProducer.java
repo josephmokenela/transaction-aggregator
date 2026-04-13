@@ -2,6 +2,7 @@ package io.mokenela.transactionaggregator.adapter.out.kafka;
 
 import io.mokenela.transactionaggregator.adapter.in.kafka.KafkaTransactionEvent;
 import io.mokenela.transactionaggregator.domain.model.CustomerId;
+import io.mokenela.transactionaggregator.domain.port.out.TransactionGeneratorPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +27,7 @@ import java.util.UUID;
  */
 @Component
 @ConditionalOnProperty(name = "app.kafka.enabled", havingValue = "true")
-public class KafkaTransactionProducer {
+class KafkaTransactionProducer implements TransactionGeneratorPort {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaTransactionProducer.class);
 
@@ -56,6 +57,7 @@ public class KafkaTransactionProducer {
      * Publishes {@code count} synthetic transactions for the given customer.
      * Runs on a bounded-elastic scheduler so it does not block the event loop.
      */
+    @Override
     public Mono<Integer> generate(CustomerId customerId, int count) {
         log.info("Generating {} transaction(s) for customer={}", count, customerId.value());
         var random = new Random();
