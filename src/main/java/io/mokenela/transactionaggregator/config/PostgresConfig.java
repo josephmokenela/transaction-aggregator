@@ -41,6 +41,24 @@ class PostgresConfig {
     @Value("${spring.r2dbc.url}")
     private String r2dbcUrl;
 
+    @Value("${spring.r2dbc.pool.initial-size:5}")
+    private int poolInitialSize;
+
+    @Value("${spring.r2dbc.pool.max-size:20}")
+    private int poolMaxSize;
+
+    @Value("${spring.r2dbc.pool.max-idle-time:10m}")
+    private Duration poolMaxIdleTime;
+
+    @Value("${spring.r2dbc.pool.max-acquire-time:10s}")
+    private Duration poolMaxAcquireTime;
+
+    @Value("${spring.r2dbc.pool.max-life-time:30m}")
+    private Duration poolMaxLifeTime;
+
+    @Value("${spring.r2dbc.pool.acquire-retry:3}")
+    private int poolAcquireRetry;
+
     @Bean
     @Primary
     DataSource dataSource() {
@@ -71,10 +89,12 @@ class PostgresConfig {
                 .build();
 
         var poolConfig = ConnectionPoolConfiguration.builder(ConnectionFactories.get(options))
-                .initialSize(5)
-                .maxSize(20)
-                .maxIdleTime(Duration.ofMinutes(10))
-                .maxAcquireTime(Duration.ofSeconds(10))
+                .initialSize(poolInitialSize)
+                .maxSize(poolMaxSize)
+                .maxIdleTime(poolMaxIdleTime)
+                .maxAcquireTime(poolMaxAcquireTime)
+                .maxLifeTime(poolMaxLifeTime)
+                .acquireRetry(poolAcquireRetry)
                 .build();
 
         return new ConnectionPool(poolConfig);

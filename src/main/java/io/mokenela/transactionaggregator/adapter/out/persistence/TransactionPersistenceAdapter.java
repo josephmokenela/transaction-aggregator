@@ -1,5 +1,7 @@
 package io.mokenela.transactionaggregator.adapter.out.persistence;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.mokenela.transactionaggregator.domain.model.*;
 import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
@@ -34,19 +36,22 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
     private final TransactionEntityMapper mapper;
     private final MeterRegistry meterRegistry;
     private final R2dbcConverter converter;
+    private final CircuitBreaker circuitBreaker;
 
     TransactionPersistenceAdapter(R2dbcTransactionRepository repository,
                                   R2dbcAccountRepository accountRepository,
                                   R2dbcEntityTemplate template,
                                   TransactionEntityMapper mapper,
                                   MeterRegistry meterRegistry,
-                                  R2dbcConverter converter) {
+                                  R2dbcConverter converter,
+                                  CircuitBreaker databaseCircuitBreaker) {
         this.repository = repository;
         this.accountRepository = accountRepository;
         this.template = template;
         this.mapper = mapper;
         this.meterRegistry = meterRegistry;
         this.converter = converter;
+        this.circuitBreaker = databaseCircuitBreaker;
     }
 
     @Override
@@ -78,23 +83,29 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
                     "source", transaction.dataSourceId().value()).increment();
         })
         .doOnError(ex -> sample.stop(timer))
-        .map(mapper::toDomain);
+        .map(mapper::toDomain)
+        .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     @Override
     public Mono<Transaction> loadById(TransactionId transactionId) {
-        return repository.findById(transactionId.value()).map(mapper::toDomain);
+        return repository.findById(transactionId.value())
+                .map(mapper::toDomain)
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     @Override
     public Flux<Transaction> loadByAccountId(AccountId accountId) {
-        return repository.findByAccountId(accountId.value(), MAX_LIMIT).map(mapper::toDomain);
+        return repository.findByAccountId(accountId.value(), MAX_LIMIT)
+                .map(mapper::toDomain)
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     @Override
     public Flux<Transaction> loadByAccountIdAndPeriod(AccountId accountId, Instant from, Instant to) {
         return repository.findByAccountIdAndPeriod(accountId.value(), from, to, MAX_PERIOD_LIMIT)
-                .map(mapper::toDomain);
+                .map(mapper::toDomain)
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     private static final int MAX_LIMIT        = 1000;
@@ -113,7 +124,8 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
         return template.select(
                 Query.query(buildCriteria(filter)).limit(effectiveLimit),
                 TransactionEntity.class
-        ).map(mapper::toDomain);
+        ).map(mapper::toDomain)
+         .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     /**
@@ -152,7 +164,8 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
 
         return spec.map((row, meta) -> converter.read(TransactionEntity.class, row))
                 .all()
-                .map(mapper::toDomain);
+                .map(mapper::toDomain)
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     /**
@@ -196,7 +209,8 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
             var totalAmount  = Money.of(row.get("total_amount", BigDecimal.class), currencyCode);
             var count        = row.get("tx_count", Long.class);
             return new CategoryAggregate(type, category, totalAmount, count);
-        }).all();
+        }).all()
+          .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
     // ── private helpers ────────────────────────────────────────────────────────

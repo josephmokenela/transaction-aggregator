@@ -25,6 +25,19 @@ spring:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
     username: ${DB_USERNAME:postgres}
     password: ${vault.db.password:${DB_PASSWORD:postgres}}
+    pool:
+      # Minimum connections kept alive — avoids cold-start latency on first request.
+      initial-size: ${R2DBC_POOL_INITIAL_SIZE:5}
+      # Maximum concurrent connections — tune against DB max_connections and replica count.
+      max-size: ${R2DBC_POOL_MAX_SIZE:20}
+      # Return idle connections to the pool after this period (reduces DB-side resource use).
+      max-idle-time: ${R2DBC_POOL_MAX_IDLE_TIME:10m}
+      # Fail fast if a connection cannot be acquired within this window.
+      max-acquire-time: ${R2DBC_POOL_MAX_ACQUIRE_TIME:10s}
+      # Recycle connections older than this to prevent silent TCP session rot.
+      max-life-time: ${R2DBC_POOL_MAX_LIFE_TIME:30m}
+      # Retry connection acquisition this many times before propagating the error.
+      acquire-retry: ${R2DBC_POOL_ACQUIRE_RETRY:3}
   datasource:
     # Blocking JDBC DataSource used exclusively by Flyway at startup
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:transaction_aggregator}
