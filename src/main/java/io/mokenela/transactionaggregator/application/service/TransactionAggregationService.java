@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-public class TransactionAggregationService
+class TransactionAggregationService
         implements RecordTransactionUseCase, AggregateTransactionsUseCase, GetTransactionUseCase, SearchTransactionsUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionAggregationService.class);

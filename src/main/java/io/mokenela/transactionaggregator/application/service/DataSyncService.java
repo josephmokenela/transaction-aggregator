@@ -18,7 +18,7 @@ import java.time.Instant;
 import java.util.List;
 
 @Service
-public class DataSyncService implements SyncTransactionsUseCase, ListAvailableSourcesUseCase {
+class DataSyncService implements SyncTransactionsUseCase, ListAvailableSourcesUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(DataSyncService.class);
 
