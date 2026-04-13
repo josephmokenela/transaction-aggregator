@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -152,6 +153,50 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
         return spec.map((row, meta) -> converter.read(TransactionEntity.class, row))
                 .all()
                 .map(mapper::toDomain);
+    }
+
+    /**
+     * Runs a SQL {@code GROUP BY (type, category, currency_code)} query so that summary
+     * calculations never load individual transaction rows into the JVM. The result set is
+     * bounded by the product of the two enum cardinalities (≤ ~40 rows) regardless of how
+     * many transactions the customer has.
+     */
+    @Override
+    public Flux<CategoryAggregate> aggregateByFilter(TransactionFilter filter) {
+        var sql = new StringBuilder("""
+                SELECT type, category, currency_code,
+                       SUM(amount) AS total_amount, COUNT(*) AS tx_count
+                FROM transactions
+                WHERE 1=1
+                """);
+
+        if (filter.customerId()   != null) sql.append(" AND customer_id    = :customerId");
+        if (filter.accountId()    != null) sql.append(" AND account_id     = :accountId");
+        if (filter.category()     != null) sql.append(" AND category       = :category");
+        if (filter.type()         != null) sql.append(" AND type           = :type");
+        if (filter.dataSourceId() != null) sql.append(" AND data_source_id = :dataSourceId");
+        if (filter.from()         != null) sql.append(" AND occurred_at   >= :from");
+        if (filter.to()           != null) sql.append(" AND occurred_at   <= :to");
+        sql.append(" GROUP BY type, category, currency_code ORDER BY total_amount DESC");
+
+        var spec = template.getDatabaseClient().sql(sql.toString());
+
+        if (filter.customerId()   != null) spec = spec.bind("customerId",   filter.customerId().value());
+        if (filter.accountId()    != null) spec = spec.bind("accountId",    filter.accountId().value());
+        if (filter.category()     != null) spec = spec.bind("category",     filter.category().name());
+        if (filter.type()         != null) spec = spec.bind("type",         filter.type().name());
+        if (filter.dataSourceId() != null) spec = spec.bind("dataSourceId", filter.dataSourceId().value());
+        if (filter.from()         != null) spec = spec.bind("from",         filter.from());
+        if (filter.to()           != null) spec = spec.bind("to",           filter.to());
+
+        return spec.map((row, meta) -> {
+            var type         = TransactionType.valueOf(row.get("type", String.class));
+            var category     = TransactionCategory.valueOf(row.get("category", String.class));
+            var currencyCode = row.get("currency_code", String.class);
+            var totalAmount  = Money.of(row.get("total_amount", BigDecimal.class), currencyCode);
+            var count        = row.get("tx_count", Long.class);
+            return new CategoryAggregate(type, category, totalAmount, count);
+        }).all();
     }
 
     // ── private helpers ────────────────────────────────────────────────────────

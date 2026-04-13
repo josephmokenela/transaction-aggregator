@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -20,7 +21,17 @@ import java.util.UUID;
 
 /**
  * Consumes transaction events from the Kafka topic and persists them.
- * Batch mode keeps throughput high — Kafka delivers a list of records per poll.
+ *
+ * <p>Batch mode keeps throughput high — Kafka delivers a list of records per poll.
+ * The container is configured with {@code AckMode.MANUAL}: the offset is committed
+ * only after the reactive pipeline signals completion, so a fatal pipeline error
+ * leaves the offset uncommitted and Kafka redelivers the batch on the next poll.</p>
+ *
+ * <p>Per-event failures are handled inside the {@code flatMap}: mapping errors and
+ * save failures (after 3 R2DBC retries) are routed to the dead-letter topic so the
+ * rest of the batch is unaffected. The outer subscribe error handler is a last-resort
+ * safety net for unexpected pipeline faults — it deliberately withholds the ack,
+ * letting Kafka trigger redelivery.</p>
  */
 @Component
 @ConditionalOnProperty(name = "app.kafka.enabled", havingValue = "true")
@@ -52,7 +63,7 @@ class KafkaTransactionConsumer {
             batch = "true",
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void consume(List<KafkaTransactionEvent> events) {
+    public void consume(List<KafkaTransactionEvent> events, Acknowledgment ack) {
         log.info("Received batch of {} transaction event(s) from Kafka", events.size());
 
         Flux.fromIterable(events)
@@ -75,10 +86,20 @@ class KafkaTransactionConsumer {
                                 return sendToDlt(event, "save_error");
                             });
                 }, 8)
-                .doOnComplete(() -> log.info("Batch of {} event(s) processed", events.size()))
+                .doOnComplete(() -> {
+                    // All events were either saved or routed to DLT — safe to commit.
+                    ack.acknowledge();
+                    log.info("Batch of {} event(s) processed and offset committed", events.size());
+                })
                 .subscribe(
                         t -> {},
-                        ex -> log.error("Fatal error in Kafka consumer pipeline", ex)
+                        ex -> {
+                            // Fatal pipeline error — deliberately withhold ack so Kafka redelivers
+                            // the batch. Per-event errors are handled inside flatMap and never reach
+                            // here, so this only fires for unexpected infrastructure faults.
+                            log.error("Fatal error in Kafka consumer pipeline — offset withheld, batch will be redelivered", ex);
+                            meterRegistry.counter("kafka.consumer.pipeline.errors").increment();
+                        }
                 );
     }
 
@@ -86,7 +107,14 @@ class KafkaTransactionConsumer {
         meterRegistry.counter("kafka.messages.dropped", "reason", reason).increment();
         return Mono.fromFuture(dltSender.send(dltTopic, event.id(), event))
                 .doOnSuccess(r -> log.info("Routed event id={} to DLT ({})", event.id(), reason))
-                .doOnError(ex -> log.error("Failed to route event id={} to DLT: {}", event.id(), ex.getMessage()))
+                .onErrorResume(ex -> {
+                    // DLT is also unavailable — event is permanently lost; record it so
+                    // the on-call engineer can detect and investigate via the metric alert.
+                    log.error("Failed to route event id={} to DLT — event permanently lost: {}",
+                            event.id(), ex.getMessage());
+                    meterRegistry.counter("kafka.messages.lost", "reason", "dlt_unavailable").increment();
+                    return Mono.empty();
+                })
                 .then(Mono.empty());
     }
 

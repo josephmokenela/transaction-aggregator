@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
+                              https://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+  <!--
+    Project-level Maven settings — activated automatically by ./mvnw via .mvn/maven.config.
+
+    WHY THIS FILE EXISTS
+    ====================
+    Corporate networks often deploy a company-wide ~/.m2/settings.xml that mirrors all
+    Maven repositories to an internal Nexus / Artifactory instance. Because Maven mirror
+    rules override every repository declared in pom.xml, builds inside the company
+    network silently redirect to the internal server — which may not have all artifacts,
+    may be unavailable outside the office, or may require credentials that contributors
+    outside the company do not have.
+
+    Passing -s to ./mvnw REPLACES the user settings file for that invocation, so the
+    corporate mirror is never consulted. All artifacts are resolved directly from
+    Maven Central (https://repo.maven.apache.org/maven2).
+
+    TRADE-OFFS
+    ==========
+    - ~/.m2/settings.xml is NOT merged; any user-specific credentials or profiles
+      defined there are not active when running ./mvnw.
+    - If you need to deploy artifacts to an internal repository, run mvn with your
+      own settings file explicitly: mvn deploy -s ~/.m2/settings.xml
+  -->
+
+  <mirrors>
+    <mirror>
+      <id>central-direct</id>
+      <name>Maven Central (direct — bypasses corporate mirrors)</name>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+
+</settings>
