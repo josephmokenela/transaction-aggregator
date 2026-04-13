@@ -30,19 +30,13 @@ public class CustomerQueryService
     private final LoadCustomerPort loadCustomerPort;
     private final LoadTransactionPort loadTransactionPort;
     private final Currency defaultCurrency;
-    private final int maxTransactionsPerSummary;
-    private final int warnThreshold;
 
     public CustomerQueryService(LoadCustomerPort loadCustomerPort,
                                 LoadTransactionPort loadTransactionPort,
-                                @Value("${app.default-currency:GBP}") String defaultCurrencyCode,
-                                @Value("${app.aggregation.max-transactions-per-summary:10000}") int maxTransactionsPerSummary,
-                                @Value("${app.aggregation.warn-threshold:5000}") int warnThreshold) {
+                                @Value("${app.default-currency:GBP}") String defaultCurrencyCode) {
         this.loadCustomerPort = loadCustomerPort;
         this.loadTransactionPort = loadTransactionPort;
         this.defaultCurrency = Currency.getInstance(defaultCurrencyCode);
-        this.maxTransactionsPerSummary = maxTransactionsPerSummary;
-        this.warnThreshold = warnThreshold;
     }
 
     @Override
@@ -65,18 +59,9 @@ public class CustomerQueryService
 
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMap(customer -> loadTransactionPort.loadByFilter(filter, maxTransactionsPerSummary)
+                .flatMap(customer -> loadTransactionPort.aggregateByFilter(filter)
                         .collectList()
-                        .doOnNext(transactions -> {
-                            if (transactions.size() >= maxTransactionsPerSummary) {
-                                log.warn("Customer {} hit transaction limit ({}) for summary — results truncated",
-                                        customer.id().value(), maxTransactionsPerSummary);
-                            } else if (transactions.size() >= warnThreshold) {
-                                log.info("Customer {} approaching transaction limit: {}/{}",
-                                        customer.id().value(), transactions.size(), maxTransactionsPerSummary);
-                            }
-                        })
-                        .map(transactions -> buildCustomerSummary(customer, query, transactions)));
+                        .map(aggregates -> buildCustomerSummaryFromAggregates(customer, query, aggregates)));
     }
 
     @Override
@@ -93,37 +78,38 @@ public class CustomerQueryService
 
         return loadCustomerPort.loadById(query.customerId())
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException(query.customerId())))
-                .flatMapMany(ignored -> loadTransactionPort.loadByFilter(filter, maxTransactionsPerSummary)
+                .flatMapMany(ignored -> loadTransactionPort.aggregateByFilter(filter)
                         .collectList()
-                        .flatMapIterable(this::buildCategorySummaries));
+                        .flatMapIterable(this::buildCategorySummariesFromAggregates));
     }
 
-    private CustomerSummary buildCustomerSummary(Customer customer, GetCustomerSummaryQuery query,
-                                                  List<Transaction> transactions) {
-        if (transactions.isEmpty()) {
+    private CustomerSummary buildCustomerSummaryFromAggregates(Customer customer,
+                                                                GetCustomerSummaryQuery query,
+                                                                List<CategoryAggregate> aggregates) {
+        if (aggregates.isEmpty()) {
             log.debug("No transactions found for customer={} in requested period", customer.id().value());
             var zero = Money.zero(defaultCurrency.getCurrencyCode());
             return new CustomerSummary(customer.id(), customer.name(), query.from(), query.to(),
                     zero, zero, zero, 0, List.of());
         }
 
-        var currencyCode = transactions.getFirst().amount().currency().getCurrencyCode();
+        var currencyCode = aggregates.getFirst().totalAmount().currency().getCurrencyCode();
         var zero = Money.zero(currencyCode);
 
-        var totalInflow = transactions.stream()
-                .filter(Transaction::isCredit)
-                .map(Transaction::amount)
+        var totalInflow = aggregates.stream()
+                .filter(a -> a.type() == TransactionType.CREDIT)
+                .map(CategoryAggregate::totalAmount)
                 .reduce(zero, Money::add);
 
-        var totalOutflow = transactions.stream()
-                .filter(Transaction::isDebit)
-                .map(Transaction::amount)
+        var totalOutflow = aggregates.stream()
+                .filter(a -> a.type() == TransactionType.DEBIT)
+                .map(CategoryAggregate::totalAmount)
                 .reduce(zero, Money::add);
 
-        var categorySummaries = buildCategorySummaries(transactions);
+        long totalCount = aggregates.stream().mapToLong(CategoryAggregate::count).sum();
 
         log.debug("Customer={} summary: {} transactions, inflow={} outflow={}",
-                customer.id().value(), transactions.size(), totalInflow.amount(), totalOutflow.amount());
+                customer.id().value(), totalCount, totalInflow.amount(), totalOutflow.amount());
 
         return new CustomerSummary(
                 customer.id(),
@@ -133,34 +119,39 @@ public class CustomerQueryService
                 totalInflow,
                 totalOutflow,
                 totalInflow.subtract(totalOutflow),
-                transactions.size(),
-                categorySummaries
+                totalCount,
+                buildCategorySummariesFromAggregates(aggregates)
         );
     }
 
-    private List<CategorySummary> buildCategorySummaries(List<Transaction> transactions) {
-        if (transactions.isEmpty()) return List.of();
+    private List<CategorySummary> buildCategorySummariesFromAggregates(List<CategoryAggregate> aggregates) {
+        if (aggregates.isEmpty()) return List.of();
 
-        var currencyCode = transactions.getFirst().amount().currency().getCurrencyCode();
+        var currencyCode = aggregates.getFirst().totalAmount().currency().getCurrencyCode();
         var zero = Money.zero(currencyCode);
 
-        var grandTotal = transactions.stream()
-                .map(t -> t.amount().amount())
+        var grandTotal = aggregates.stream()
+                .map(a -> a.totalAmount().amount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Map<TransactionCategory, List<Transaction>> byCategory = transactions.stream()
-                .collect(Collectors.groupingBy(Transaction::category));
+        // Each aggregate is already one (type, category) group from SQL;
+        // merge CREDIT and DEBIT rows for the same category into a single CategorySummary.
+        Map<TransactionCategory, List<CategoryAggregate>> byCategory = aggregates.stream()
+                .collect(Collectors.groupingBy(CategoryAggregate::category));
 
         return byCategory.entrySet().stream()
                 .map(entry -> {
-                    var categoryTransactions = entry.getValue();
-                    var categoryTotal = categoryTransactions.stream()
-                            .map(Transaction::amount)
+                    var categoryTotal = entry.getValue().stream()
+                            .map(CategoryAggregate::totalAmount)
                             .reduce(zero, Money::add);
 
-                    var categoryAbsTotal = categoryTransactions.stream()
-                            .map(t -> t.amount().amount())
+                    var categoryAbsTotal = entry.getValue().stream()
+                            .map(a -> a.totalAmount().amount())
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    long categoryCount = entry.getValue().stream()
+                            .mapToLong(CategoryAggregate::count)
+                            .sum();
 
                     var percentage = grandTotal.compareTo(BigDecimal.ZERO) == 0
                             ? BigDecimal.ZERO
@@ -168,7 +159,7 @@ public class CustomerQueryService
                                               .multiply(BigDecimal.valueOf(100))
                                               .setScale(2, RoundingMode.HALF_EVEN);
 
-                    return new CategorySummary(entry.getKey(), categoryTotal, categoryTransactions.size(), percentage);
+                    return new CategorySummary(entry.getKey(), categoryTotal, categoryCount, percentage);
                 })
                 .sorted(Comparator.comparing(cs -> cs.totalAmount().amount(), Comparator.reverseOrder()))
                 .toList();

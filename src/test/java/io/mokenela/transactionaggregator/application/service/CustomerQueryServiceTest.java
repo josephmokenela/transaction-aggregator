@@ -8,6 +8,7 @@ import io.mokenela.transactionaggregator.domain.port.out.LoadTransactionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -42,7 +43,7 @@ class CustomerQueryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CustomerQueryService(loadCustomerPort, loadTransactionPort, "GBP", 10_000, 5_000);
+        service = new CustomerQueryService(loadCustomerPort, loadTransactionPort, "GBP");
     }
 
     // ── listCustomers ─────────────────────────────────────────────────────────
@@ -105,10 +106,10 @@ class CustomerQueryServiceTest {
     void getCustomerSummary_shouldReturnCorrectTotals_withCreditAndDebitTransactions() {
         var query = new GetCustomerSummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), eq(10_000))).thenReturn(Flux.just(
-                transaction(TransactionType.CREDIT, "3500.00"),
-                transaction(TransactionType.CREDIT, "500.00"),
-                transaction(TransactionType.DEBIT,  "200.00")
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.just(
+                aggregate(TransactionType.CREDIT, TransactionCategory.SALARY,     "3500.00", 1),
+                aggregate(TransactionType.CREDIT, TransactionCategory.OTHER,       "500.00", 1),
+                aggregate(TransactionType.DEBIT,  TransactionCategory.SHOPPING,    "200.00", 1)
         ));
 
         StepVerifier.create(service.getCustomerSummary(query))
@@ -127,7 +128,7 @@ class CustomerQueryServiceTest {
     void getCustomerSummary_shouldReturnZeroTotals_whenNoPeriodTransactions() {
         var query = new GetCustomerSummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), anyInt())).thenReturn(Flux.empty());
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.empty());
 
         StepVerifier.create(service.getCustomerSummary(query))
                 .assertNext(summary -> {
@@ -160,10 +161,10 @@ class CustomerQueryServiceTest {
         var query = new GetCustomerSummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
 
-        // 75% SALARY, 25% FOOD — verifies percentage calculation
-        when(loadTransactionPort.loadByFilter(any(), anyInt())).thenReturn(Flux.just(
-                transactionWithCategory(TransactionType.CREDIT, "75.00", TransactionCategory.SALARY),
-                transactionWithCategory(TransactionType.DEBIT,  "25.00", TransactionCategory.FOOD_AND_DINING)
+        // SALARY 75, FOOD 25 → grand total 100; SALARY = 75%
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.just(
+                aggregate(TransactionType.CREDIT, TransactionCategory.SALARY,        "75.00", 1),
+                aggregate(TransactionType.DEBIT,  TransactionCategory.FOOD_AND_DINING, "25.00", 1)
         ));
 
         StepVerifier.create(service.getCustomerSummary(query))
@@ -178,15 +179,18 @@ class CustomerQueryServiceTest {
     }
 
     @Test
-    void getCustomerSummary_shouldPassMaxTransactionsLimitToPort() {
-        var customService = new CustomerQueryService(loadCustomerPort, loadTransactionPort, "GBP", 500, 250);
+    void getCustomerSummary_shouldCallAggregateByFilter_withCorrectFilterDimensions() {
         var query = new GetCustomerSummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), eq(500))).thenReturn(Flux.empty());
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(customService.getCustomerSummary(query)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(service.getCustomerSummary(query)).expectNextCount(1).verifyComplete();
 
-        verify(loadTransactionPort).loadByFilter(any(), eq(500));
+        var captor = ArgumentCaptor.forClass(TransactionFilter.class);
+        verify(loadTransactionPort).aggregateByFilter(captor.capture());
+        assertThat(captor.getValue().customerId()).isEqualTo(CUSTOMER_ID);
+        assertThat(captor.getValue().from()).isEqualTo(FROM);
+        assertThat(captor.getValue().to()).isEqualTo(TO);
     }
 
     // ── getCategorySummary ────────────────────────────────────────────────────
@@ -195,10 +199,10 @@ class CustomerQueryServiceTest {
     void getCategorySummary_shouldReturnBreakdown_groupedByCategory() {
         var query = new GetCategorySummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), anyInt())).thenReturn(Flux.just(
-                transactionWithCategory(TransactionType.CREDIT, "3500.00", TransactionCategory.SALARY),
-                transactionWithCategory(TransactionType.DEBIT,  "50.00", TransactionCategory.FOOD_AND_DINING),
-                transactionWithCategory(TransactionType.DEBIT,  "30.00", TransactionCategory.FOOD_AND_DINING)
+        // SQL GROUP BY merges the two FOOD rows into one aggregate before reaching the service
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.just(
+                aggregate(TransactionType.CREDIT, TransactionCategory.SALARY,        "3500.00", 1),
+                aggregate(TransactionType.DEBIT,  TransactionCategory.FOOD_AND_DINING,  "80.00", 2)
         ));
 
         StepVerifier.create(service.getCategorySummary(query))
@@ -219,7 +223,7 @@ class CustomerQueryServiceTest {
     void getCategorySummary_shouldReturnEmpty_whenNoTransactionsInPeriod() {
         var query = new GetCategorySummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), anyInt())).thenReturn(Flux.empty());
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.empty());
 
         StepVerifier.create(service.getCategorySummary(query))
                 .expectNextCount(0)
@@ -242,17 +246,16 @@ class CustomerQueryServiceTest {
     void getCategorySummary_shouldSortByTotalAmountDescending() {
         var query = new GetCategorySummaryQuery(CUSTOMER_ID, FROM, TO);
         when(loadCustomerPort.loadById(CUSTOMER_ID)).thenReturn(Mono.just(ALICE));
-        when(loadTransactionPort.loadByFilter(any(), anyInt())).thenReturn(Flux.just(
-                transactionWithCategory(TransactionType.DEBIT, "10.00", TransactionCategory.ENTERTAINMENT),
-                transactionWithCategory(TransactionType.CREDIT, "500.00", TransactionCategory.SALARY),
-                transactionWithCategory(TransactionType.DEBIT, "100.00", TransactionCategory.SHOPPING)
+        when(loadTransactionPort.aggregateByFilter(any())).thenReturn(Flux.just(
+                aggregate(TransactionType.DEBIT,  TransactionCategory.ENTERTAINMENT,  "10.00", 1),
+                aggregate(TransactionType.CREDIT, TransactionCategory.SALARY,        "500.00", 1),
+                aggregate(TransactionType.DEBIT,  TransactionCategory.SHOPPING,      "100.00", 1)
         ));
 
         StepVerifier.create(service.getCategorySummary(query))
                 .recordWith(java.util.ArrayList::new)
                 .thenConsumeWhile(ignored -> true)
                 .consumeRecordedWith(summaries -> {
-                    // Sorted descending by amount
                     var amounts = summaries.stream()
                             .map(s -> s.totalAmount().amount())
                             .toList();
@@ -263,24 +266,8 @@ class CustomerQueryServiceTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private Transaction transaction(TransactionType type, String amount) {
-        return transactionWithCategory(type, amount, TransactionCategory.OTHER);
-    }
-
-    private Transaction transactionWithCategory(TransactionType type, String amount,
-                                                 TransactionCategory category) {
-        return new Transaction(
-                TransactionId.generate(),
-                CUSTOMER_ID,
-                new AccountId(UUID.randomUUID()),
-                Money.of(new BigDecimal(amount), "GBP"),
-                type,
-                TransactionStatus.COMPLETED,
-                "Test transaction",
-                category,
-                null,
-                DataSourceId.MANUAL,
-                Instant.now()
-        );
+    private CategoryAggregate aggregate(TransactionType type, TransactionCategory category,
+                                        String amount, long count) {
+        return new CategoryAggregate(type, category, Money.of(new BigDecimal(amount), "GBP"), count);
     }
 }

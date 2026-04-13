@@ -17,6 +17,7 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.*;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
@@ -97,6 +98,11 @@ class KafkaTopicConfig {
         factory.setConsumerFactory(consumerFactory);
         factory.setBatchListener(true);
         factory.setConcurrency(6);  // one thread per partition
+        // MANUAL ack mode: the listener controls when the offset is committed.
+        // The consumer calls ack.acknowledge() only after the reactive pipeline
+        // completes — if the pipeline errors fatally, the offset is NOT committed
+        // and Kafka will redeliver the batch on the next poll.
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         return factory;
     }
 }
