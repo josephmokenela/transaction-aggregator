@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: transaction-aggregator
+  labels:
+    app: postgres
+    component: backup
+spec:
+  # Run daily at 02:00 UTC — low-traffic window for this workload.
+  schedule: "0 2 * * *"
+
+  # Retain the last 3 successful job pods for log inspection.
+  successfulJobsHistoryLimit: 3
+  # Retain the last 1 failed job pod so failures are visible.
+  failedJobsHistoryLimit: 1
+
+  # If a scheduled run is still pending when the next trigger fires, skip it.
+  concurrencyPolicy: Forbid
+
+  jobTemplate:
+    spec:
+      # Allow up to 10 minutes for the dump + cleanup before the job is killed.
+      activeDeadlineSeconds: 600
+
+      # Retry once on transient failure (e.g. network blip to Postgres).
+      backoffLimit: 1
+
+      template:
+        metadata:
+          labels:
+            app: postgres
+            component: backup
+        spec:
+          restartPolicy: OnFailure
+
+          containers:
+            - name: pg-dump
+              image: postgres:17-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+
+                  BACKUP_DIR=/backup
+                  DB_FILE="${BACKUP_DIR}/$(date +%Y%m%d_%H%M%S)_transaction_aggregator.dump"
+
+                  echo "Starting pg_dump → ${DB_FILE}"
+                  PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
+                    --host=postgres \
+                    --port=5432 \
+                    --username="${POSTGRES_USER}" \
+                    --dbname=transaction_aggregator \
+                    --format=custom \
+                    --compress=9 \
+                    --file="${DB_FILE}"
+
+                  echo "Dump complete. Pruning backups older than 7 days."
+                  find "${BACKUP_DIR}" -maxdepth 1 -name "*.dump" -mtime +7 -delete
+
+                  echo "Remaining backups:"
+                  ls -lh "${BACKUP_DIR}"/*.dump 2>/dev/null || echo "(none)"
+
+              env:
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"
+
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup
+
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: postgres-backup
+
+# ── Operational notes ────────────────────────────────────────────────────────
+#
+# Restore from a custom-format dump:
+#   PGPASSWORD=<pw> pg_restore \
+#     --host=<host> --port=5432 --username=<user> \
+#     --dbname=transaction_aggregator --format=custom \
+#     <dump-file>
+#
+# Production hardening (out of scope for local Kind setup):
+#   - Replace the PVC volume with an initContainer + aws-cli/gsutil/rclone
+#     that uploads the dump to object storage (S3, GCS) before the pod exits.
+#     That removes the single-node dependency of a local PVC.
+#   - Add a Prometheus alert on CronJob last-success age:
+#       time() - kube_cronjob_status_last_successful_time{cronjob="postgres-backup"} > 90000
+#     (fires if no successful run in the last 25 hours).
+#   - Consider pg_basebackup + WAL archiving (e.g. pgWAL-G) for PITR
+#     instead of logical dumps if the database grows large.

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup
+  namespace: transaction-aggregator
+  labels:
+    app: postgres
+    component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Sized to hold 7 daily pg_dump files at ~2× the database PVC capacity.
+      # Adjust to match actual database growth before production.
+      storage: 5Gi

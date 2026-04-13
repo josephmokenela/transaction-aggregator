@@ -54,11 +54,13 @@ app:
     institution-id: ins_109508
   security:
     jwt:
-      # Must be ≥32 characters (256 bits). Use Vault or JWT_SECRET env var in production.
-      secret: ${vault.jwt.secret:${JWT_SECRET:dev-only-secret-key-change-in-production!!}}
+      # Resolution order: Vault (docker profile) → JWT_SECRET env var → local dev fallback.
+      # The fallback is intentionally weak and named to prevent accidental use outside local dev.
+      # docker compose reads JWT_SECRET from .env (copied from .env.example).
+      secret: ${vault.jwt.secret:${JWT_SECRET:local-dev-only-do-not-use-in-docker-or-prod}}
       expiry-hours: ${JWT_EXPIRY_HOURS:24}
-      # Change this in production — controls access to POST /api/v1/auth/admin-token
-      admin-secret: ${vault.jwt.admin-secret:${JWT_ADMIN_SECRET:dev-only-admin-secret}}
+      # Controls access to POST /api/v1/auth/admin-token.
+      admin-secret: ${vault.jwt.admin-secret:${JWT_ADMIN_SECRET:local-dev-admin-do-not-use-in-docker-or-prod}}
     cors:
       # Comma-separated allowed origins. Override with CORS_ALLOWED_ORIGINS env var in production.
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}

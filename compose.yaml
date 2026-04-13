@@ -26,17 +26,21 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
+      # All values come from .env (copied from .env.example) — nothing is hardcoded here.
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ADMIN_SECRET: ${JWT_ADMIN_SECRET}
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-placeholder}
       PLAID_SECRET: ${PLAID_SECRET:-placeholder}
     entrypoint: sh -c
     command:
       - |
         vault kv put secret/transaction-aggregator \
-          vault.db.password=postgres \
+          vault.db.password=$$DB_PASSWORD \
+          vault.jwt.secret=$$JWT_SECRET \
+          vault.jwt.admin-secret=$$JWT_ADMIN_SECRET \
           vault.plaid.client-id=$$PLAID_CLIENT_ID \
-          vault.plaid.secret=$$PLAID_SECRET \
-          vault.jwt.secret=dev-only-secret-key-change-in-production!! \
-          vault.jwt.admin-secret=dev-only-admin-secret &&
+          vault.plaid.secret=$$PLAID_SECRET &&
         echo 'Vault secrets seeded.'
     restart: "no"
 
@@ -84,7 +88,7 @@ services:
     environment:
       POSTGRES_DB: transaction_aggregator
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5434:5432"
     volumes:

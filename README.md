@@ -35,7 +35,10 @@ config/          ← OpenAPI bean
 ## Running locally (Docker Compose — recommended)
 
 ```bash
-# Build the image and start postgres + app
+# 1. Create your local secrets file (one-time setup)
+cp .env.demo.credentials .env
+
+# 2. Build the image and start all services
 docker compose up --build
 
 # API is available at http://localhost:8080
@@ -43,6 +46,9 @@ docker compose up --build
 # Actuator:   http://localhost:8080/actuator/health
 # Prometheus: http://localhost:8080/actuator/prometheus
 ```
+
+> `.env.demo.credentials` contains pre-generated demo credentials for local use.
+> `.env` is gitignored and will never be committed.
 
 Stop with `docker compose down` (add `-v` to also remove the database volume).
 
@@ -117,12 +123,12 @@ curl -s -X POST http://localhost:8080/api/v1/auth/token \
   -d '{"customerId": "11111111-1111-1111-1111-111111111111"}'
 ```
 
-**Admin token** — provide the admin secret (default for local dev: `dev-only-admin-secret`):
+**Admin token** — provide the admin secret (set via `JWT_ADMIN_SECRET` in your `.env`):
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/auth/admin-token \
   -H "Content-Type: application/json" \
-  -d '{"secret": "dev-only-admin-secret"}'
+  -d '{"secret": "<JWT_ADMIN_SECRET from your .env>"}'
 ```
 
 Both responses return:
@@ -151,12 +157,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/customers/11
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | `dev-only-secret-key-change-in-production!!` | HMAC-SHA256 signing key (min 32 chars) |
+| `JWT_SECRET` | see `.env.demo.credentials` | HMAC-SHA256 signing key (min 32 chars) |
 | `JWT_EXPIRY_HOURS` | `24` | Token lifetime in hours |
-| `JWT_ADMIN_SECRET` | `dev-only-admin-secret` | Secret required to obtain an admin token |
+| `JWT_ADMIN_SECRET` | see `.env.demo.credentials` | Secret required to obtain an admin token |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:4200` | Comma-separated allowed CORS origins |
 
-> In production all secrets are sourced from Vault — see the `docker` profile in `application.yaml`.
+> In the `docker` profile all secrets are sourced from Vault, which is seeded at startup from your `.env` file.
 
 ## API overview
 
@@ -285,9 +291,9 @@ Key environment variables (all have sensible defaults for local dev):
 | `DB_PORT` | `5432` | PostgreSQL port |
 | `DB_NAME` | `transaction_aggregator` | Database name |
 | `DB_USERNAME` | `postgres` | Database user |
-| `DB_PASSWORD` | `postgres` | Database password |
-| `JWT_SECRET` | `dev-only-secret-key-change-in-production!!` | HMAC-SHA256 signing key (min 32 chars) |
+| `DB_PASSWORD` | see `.env.demo.credentials` | Database password |
+| `JWT_SECRET` | see `.env.demo.credentials` | HMAC-SHA256 signing key (min 32 chars) |
 | `JWT_EXPIRY_HOURS` | `24` | Token lifetime in hours |
-| `JWT_ADMIN_SECRET` | `dev-only-admin-secret` | Secret required to obtain an admin token |
+| `JWT_ADMIN_SECRET` | see `.env.demo.credentials` | Secret required to obtain an admin token |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:4200` | Comma-separated allowed CORS origins |
 | `SPRING_PROFILES_ACTIVE` | _(none)_ | Set to `docker` inside containers |
