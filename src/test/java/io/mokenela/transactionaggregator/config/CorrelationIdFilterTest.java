@@ -15,8 +15,7 @@ class CorrelationIdFilterTest {
 
     private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
-    // ── Response header ───────────────────────────────────────────────────────
-
+    // Response header
     @Test
     void filter_shouldEchoClientSuppliedRequestId_inResponseHeader() {
         var exchange = exchangeWithHeader("X-Request-ID", "client-provided-id");
@@ -51,8 +50,7 @@ class CorrelationIdFilterTest {
         assertThat(responseId).isNotEqualTo("   ");
     }
 
-    // ── Reactor context ───────────────────────────────────────────────────────
-
+    // Reactor context
     @Test
     void filter_shouldWriteClientRequestId_toReactorContext() {
         var exchange = exchangeWithHeader("X-Request-ID", "client-provided-id");
@@ -102,8 +100,7 @@ class CorrelationIdFilterTest {
         assertThat(id1).isNotEqualTo(id2);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
+    // Helpers
     private MockServerWebExchange exchangeWithHeader(String name, String value) {
         return MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/test").header(name, value).build());

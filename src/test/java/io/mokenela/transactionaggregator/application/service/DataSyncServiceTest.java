@@ -37,8 +37,7 @@ class DataSyncServiceTest {
     private static final Instant FROM = Instant.now().minus(7, ChronoUnit.DAYS);
     private static final Instant TO   = Instant.now();
 
-    // ── listAvailableSources ──────────────────────────────────────────────────
-
+    // listAvailableSources
     @Test
     void listAvailableSources_shouldReturnSourceIdForEachRegisteredSource() {
         when(sourceA.sourceId()).thenReturn(DataSourceId.MOCK_BANK);
@@ -59,8 +58,7 @@ class DataSyncServiceTest {
         assertThat(service.listAvailableSources()).isEmpty();
     }
 
-    // ── sync — happy path ─────────────────────────────────────────────────────
-
+    // sync — happy path
     @Test
     void sync_shouldSaveAllTransactions_andReturnTotalCount() {
         when(sourceA.sourceId()).thenReturn(DataSourceId.MOCK_BANK);
@@ -149,8 +147,7 @@ class DataSyncServiceTest {
         assertThat(counter.count()).isEqualTo(2.0);
     }
 
-    // ── sync — category application ───────────────────────────────────────────
-
+    // sync — category application
     @Test
     void sync_shouldApplyCategory_basedOnTransactionDescription() {
         var uncategorized = transactionWithDescription(DataSourceId.MOCK_BANK, "Monthly salary payment", "Employer Ltd");
@@ -186,8 +183,7 @@ class DataSyncServiceTest {
         ));
     }
 
-    // ── sync — source failure handling ────────────────────────────────────────
-
+    // sync — source failure handling
     @Test
     void sync_shouldContinueWithOtherSources_whenOneSourceFails() {
         when(sourceA.sourceId()).thenReturn(DataSourceId.MOCK_BANK);
@@ -241,8 +237,7 @@ class DataSyncServiceTest {
         verifyNoInteractions(saveTransactionPort);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
+    // Helpers
     private SyncTransactionsCommand command() {
         return new SyncTransactionsCommand(CUSTOMER_ID, FROM, TO);
     }

@@ -49,8 +49,7 @@ class TransactionAggregationServiceTest {
         service = new TransactionAggregationService(saveTransactionPort, loadTransactionPort, categorizationService, meterRegistry);
     }
 
-    // ── recordTransaction ──────────────────────────────────────────────────────
-
+    // recordTransaction
     @Test
     void recordTransaction_shouldAssignCategory_basedOnDescription() {
         var command = new RecordTransactionCommand(
@@ -87,8 +86,7 @@ class TransactionAggregationServiceTest {
         verify(saveTransactionPort, times(1)).save(any());
     }
 
-    // ── getTransaction ─────────────────────────────────────────────────────────
-
+    // getTransaction
     @Test
     void getTransaction_shouldReturnTransaction_whenFound() {
         var tx = sampleTransaction(TransactionType.CREDIT, "100.00");
@@ -112,8 +110,7 @@ class TransactionAggregationServiceTest {
                 .verify();
     }
 
-    // ── aggregate ─────────────────────────────────────────────────────────────
-
+    // aggregate
     @Test
     void aggregate_shouldReturnEmptySummaries_whenNoTransactionsExist() {
         var from = Instant.parse("2024-01-01T00:00:00Z");
@@ -182,8 +179,7 @@ class TransactionAggregationServiceTest {
                 .verifyComplete();
     }
 
-    // ── search ────────────────────────────────────────────────────────────────
-
+    // search
     @Test
     void search_shouldRespectLimit() {
         var filter = TransactionFilter.builder().customerId(CUSTOMER_ID).build();
@@ -199,8 +195,7 @@ class TransactionAggregationServiceTest {
                 .verifyComplete();
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
+    // helpers
     private Transaction sampleTransaction(TransactionType type, String amount) {
         return sampleTransactionAt(type, amount, Instant.now());
     }

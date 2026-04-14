@@ -49,8 +49,7 @@ class KafkaTransactionConsumerTest {
                 saveTransactionPort, categorizationService, dltSender, meterRegistry, TOPIC);
     }
 
-    // ── Happy path ─────────────────────────────────────────────────────────────
-
+    // Happy path
     @Test
     void consume_shouldSaveAllTransactions_whenBatchIsValid() {
         var events = List.of(validEvent(), validEvent(), validEvent());
@@ -82,8 +81,7 @@ class KafkaTransactionConsumerTest {
         verifyNoInteractions(dltSender);
     }
 
-    // ── Mapping errors → DLT ──────────────────────────────────────────────────
-
+    // Mapping errors → DLT
     @Test
     void consume_shouldRouteToDlt_whenEventHasInvalidTransactionType() {
         var badEvent = eventWithInvalidType();
@@ -111,8 +109,7 @@ class KafkaTransactionConsumerTest {
         assertThat(counter.count()).isEqualTo(1.0);
     }
 
-    // ── Save failures → retry / DLT ───────────────────────────────────────────
-
+    // Save failures → retry / DLT
     @Test
     void consume_shouldRetryThreeTimes_thenRouteToDlt_whenSaveFailsWithTransientR2dbcError() {
         var event = validEvent();
@@ -159,8 +156,7 @@ class KafkaTransactionConsumerTest {
         assertThat(counter.count()).isEqualTo(1.0);
     }
 
-    // ── Mixed batch ───────────────────────────────────────────────────────────
-
+    // Mixed batch
     @Test
     void consume_shouldSaveValidEvents_andRoutInvalidEventsToDlt_inMixedBatch() {
         var valid1  = validEvent();
@@ -175,8 +171,7 @@ class KafkaTransactionConsumerTest {
         verify(dltSender, timeout(2000).times(1)).send(eq(DLT_TOPIC), anyString(), any());
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
+    // Helpers
     private KafkaTransactionEvent validEvent() {
         return new KafkaTransactionEvent(
                 UUID.randomUUID().toString(),

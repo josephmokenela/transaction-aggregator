@@ -46,8 +46,7 @@ class CustomerQueryServiceTest {
         service = new CustomerQueryService(loadCustomerPort, loadTransactionPort, "GBP");
     }
 
-    // ── listCustomers ─────────────────────────────────────────────────────────
-
+    // listCustomers
     @Test
     void listCustomers_shouldReturnPagedResponse_delegatingToPort() {
         var pageRequest = new PageRequest(0, 20);
@@ -100,8 +99,7 @@ class CustomerQueryServiceTest {
         assertThat(captor.getValue().offset()).isEqualTo(20L);
     }
 
-    // ── getCustomerSummary ────────────────────────────────────────────────────
-
+    // getCustomerSummary
     @Test
     void getCustomerSummary_shouldReturnCorrectTotals_withCreditAndDebitTransactions() {
         var query = new GetCustomerSummaryQuery(CUSTOMER_ID, FROM, TO);
@@ -193,8 +191,7 @@ class CustomerQueryServiceTest {
         assertThat(captor.getValue().to()).isEqualTo(TO);
     }
 
-    // ── getCategorySummary ────────────────────────────────────────────────────
-
+    // getCategorySummary
     @Test
     void getCategorySummary_shouldReturnBreakdown_groupedByCategory() {
         var query = new GetCategorySummaryQuery(CUSTOMER_ID, FROM, TO);
@@ -264,8 +261,7 @@ class CustomerQueryServiceTest {
                 .verifyComplete();
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
+    // helpers
     private CategoryAggregate aggregate(TransactionType type, TransactionCategory category,
                                         String amount, long count) {
         return new CategoryAggregate(type, category, Money.of(new BigDecimal(amount), "GBP"), count);
