@@ -20,8 +20,7 @@ class TransactionEntityMapperTest {
     private static final String CURRENCY    = "GBP";
     private static final Instant OCCURRED   = Instant.parse("2024-06-15T10:00:00Z");
 
-    // ── toDomain ──────────────────────────────────────────────────────────────
-
+    // toDomain
     @Test
     void toDomain_shouldMapAllFieldsCorrectly() {
         var entity = buildEntity();
@@ -52,8 +51,7 @@ class TransactionEntityMapperTest {
         assertThat(domain.merchantName()).isNull();
     }
 
-    // ── toEntity ──────────────────────────────────────────────────────────────
-
+    // toEntity
     @Test
     void toEntity_shouldMapAllFieldsCorrectly() {
         var domain = buildDomain();
@@ -88,8 +86,7 @@ class TransactionEntityMapperTest {
         assertThat(entity.getCategory()).isEqualTo(TransactionCategory.FOOD_AND_DINING.name());
     }
 
-    // ── round-trip ────────────────────────────────────────────────────────────
-
+    // round-trip
     @Test
     void toDomain_toEntity_shouldBeSymmetric() {
         var domain   = buildDomain();
@@ -110,8 +107,7 @@ class TransactionEntityMapperTest {
         assertThat(restored.occurredAt()).isEqualTo(domain.occurredAt());
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
+    // helpers
     private TransactionEntity buildEntity() {
         var entity = new TransactionEntity();
         entity.setId(TX_ID);

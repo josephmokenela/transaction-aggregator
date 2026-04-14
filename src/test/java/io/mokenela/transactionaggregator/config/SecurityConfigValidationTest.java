@@ -30,8 +30,7 @@ class SecurityConfigValidationTest {
         ReflectionTestUtils.setField(config, "allowedOrigins", List.of("http://localhost:3000"));
     }
 
-    // ── Dev / default profile — weak secrets allowed ──────────────────────────
-
+    // Dev / default profile — weak secrets allowed
     @ParameterizedTest(name = "profile={0}")
     @ValueSource(strings = {"default", "dev"})
     void validateSecrets_shouldAllowWeakJwtSecret_inDevelopmentProfiles(String profile) {
@@ -48,7 +47,7 @@ class SecurityConfigValidationTest {
         assertThatCode(() -> config.validateSecrets()).doesNotThrowAnyException();
     }
 
-    // ── Docker / prod — weak secrets must be rejected ─────────────────────────
+    // Docker / prod — weak secrets must be rejected
 
     @ParameterizedTest(name = "profile={0}")
     @ValueSource(strings = {"docker", "prod", "staging"})
@@ -109,7 +108,7 @@ class SecurityConfigValidationTest {
         assertThatCode(() -> config.validateSecrets()).doesNotThrowAnyException();
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
+    // helpers
 
     private void setSecrets(String jwtSecret, String adminSecret, String activeProfiles) {
         ReflectionTestUtils.setField(config, "jwtSecret", jwtSecret);

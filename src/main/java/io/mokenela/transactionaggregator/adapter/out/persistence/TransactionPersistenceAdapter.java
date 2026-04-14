@@ -221,8 +221,7 @@ class TransactionPersistenceAdapter implements SaveTransactionPort, LoadTransact
           .transformDeferred(CircuitBreakerOperator.of(circuitBreaker));
     }
 
-    // ── private helpers ────────────────────────────────────────────────────────
-
+    // private helpers
     /**
      * Builds a Criteria chain from the non-null filter fields.
      * All conditions are ANDed; the keyword condition is an OR sub-expression

@@ -16,8 +16,7 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
     private static final String BOB        = "22222222-2222-2222-2222-222222222222";
     private static final String DATE_RANGE = "?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z";
 
-    // ── GET /api/v1/customers (admin only) ─────────────────────────────────────
-
+    // GET /api/v1/customers (admin only)
     @Test
     void listCustomers_shouldReturn401_withoutToken() {
         webTestClient.get()
@@ -90,8 +89,7 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isBadRequest();
     }
 
-    // ── GET /api/v1/customers/{id}/summary ─────────────────────────────────────
-
+    // GET /api/v1/customers/{id}/summary
     @Test
     void getCustomerSummary_shouldReturn401_withoutToken() {
         webTestClient.get()
@@ -130,8 +128,7 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isOk();
     }
 
-    // ── GET /api/v1/customers/{id}/categories ──────────────────────────────────
-
+    // GET /api/v1/customers/{id}/categories
     @Test
     void getCategoryBreakdown_shouldReturn403_whenCustomerAccessesAnotherCustomersData() {
         var aliceToken = customerToken(ALICE);
@@ -152,8 +149,7 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isOk();
     }
 
-    // ── GET /api/v1/customers/{id}/transactions ─────────────────────────────────
-
+    // GET /api/v1/customers/{id}/transactions
     @Test
     void getCustomerTransactions_shouldReturn403_whenCustomerAccessesAnotherCustomersData() {
         var aliceToken = customerToken(ALICE);
@@ -174,8 +170,7 @@ class CustomerControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isOk();
     }
 
-    // ── concurrency ────────────────────────────────────────────────────────────
-
+    // concurrency
     @Test
     void getCustomerSummary_shouldReturn200_forAllConcurrentRequests() throws Exception {
         var token = customerToken(ALICE);

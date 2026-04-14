@@ -14,8 +14,7 @@ class TransactionControllerIT extends AbstractWebIntegrationTest {
     private static final String BOB     = "22222222-2222-2222-2222-222222222222";
     private static final String ACCOUNT = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
-    // ── Authentication boundary ────────────────────────────────────────────────
-
+    // Authentication boundary
     @Test
     void recordTransaction_shouldReturn401_withoutToken() {
         webTestClient.post()
@@ -47,8 +46,7 @@ class TransactionControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isUnauthorized();
     }
 
-    // ── Customer ownership enforcement ─────────────────────────────────────────
-
+    // Customer ownership enforcement
     @Test
     void recordTransaction_shouldReturn201_whenCustomerRecordsOwnTransaction() {
         var token = customerToken(ALICE);
@@ -107,8 +105,7 @@ class TransactionControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isOk();
     }
 
-    // ── Admin unrestricted access ───────────────────────────────────────────────
-
+    // Admin unrestricted access
     @Test
     void recordTransaction_shouldReturn201_whenAdminRecordsForAnyCustomer() {
         var adminToken = adminToken();
@@ -121,8 +118,7 @@ class TransactionControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isCreated();
     }
 
-    // ── Validation ─────────────────────────────────────────────────────────────
-
+    // Validation
     @Test
     void recordTransaction_shouldReturn400_whenRequiredFieldsMissing() {
         var token = customerToken(ALICE);
@@ -135,8 +131,7 @@ class TransactionControllerIT extends AbstractWebIntegrationTest {
                 .expectStatus().isBadRequest();
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
+    // Helpers
     private Map<String, Object> transactionBody(String customerId) {
         return Map.of(
                 "customerId", customerId,

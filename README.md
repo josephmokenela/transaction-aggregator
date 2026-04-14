@@ -4,25 +4,9 @@ A reactive REST API that aggregates customer financial transaction data from mul
 
 ## Architecture
 
-The project follows **hexagonal architecture** (ports & adapters):
+The project follows **hexagonal architecture** (ports & adapters) on a fully reactive stack (WebFlux + R2DBC).
 
-```
-domain/          ← pure business logic; no framework dependencies
-  model/         ← immutable value objects (Java records): Money, Transaction, …
-  port/in/       ← use-case interfaces (what the application can do)
-  port/out/      ← output port interfaces (what the application needs)
-  exception/     ← domain exceptions
-
-application/
-  service/       ← use-case implementations; orchestrate domain + ports
-
-adapter/
-  in/web/        ← Spring WebFlux controllers + DTOs
-  out/persistence/ ← R2DBC entities, repositories, persistence adapters
-  out/datasource/  ← mock data source adapters (bank, card, payment provider)
-
-config/          ← OpenAPI bean
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the system-level and hexagonal component diagrams.
 
 ## Prerequisites
 
@@ -89,14 +73,14 @@ docker build -t transaction-aggregator:latest .
 ## Running tests
 
 ```bash
-# Unit tests only (no Docker required)
-./mvnw test -Dgroups='!integration'
-
-# All tests including integration tests (requires Docker for Testcontainers)
+# All tests — unit + integration (requires Docker for Testcontainers)
 ./mvnw verify
+
+# Unit and service tests only — no Docker required
+./mvnw test -Dexclude="**/*IT.java"
 ```
 
-The integration tests (`*IT.java`) use **Testcontainers** to spin up a real PostgreSQL instance automatically — no manual setup needed.
+Integration tests (`*IT.java`) use **Testcontainers** to spin up a real PostgreSQL instance automatically — no manual database setup needed.
 
 ## Authentication
 
@@ -255,13 +239,25 @@ curl -s "http://localhost:8080/api/v1/customers/11111111-1111-1111-1111-11111111
 
 ## Observability
 
+### Service UIs (Docker Compose)
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Swagger UI | http://localhost:8080/swagger-ui.html | Interactive API docs |
+| Prometheus | http://localhost:9090 | Metrics — no login required |
+| Grafana | http://localhost:3000 | Dashboards — admin / admin |
+| Zipkin | http://localhost:9411 | Distributed traces |
+| Kafka UI | http://localhost:8090 | Topic browser |
+
+### Actuator endpoints
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /actuator/health` | Liveness + readiness (DB connectivity included) |
+| `GET /actuator/health` | Liveness + readiness (DB + Kafka connectivity) |
 | `GET /actuator/prometheus` | Prometheus-format metrics |
 | `GET /actuator/metrics` | Metrics index |
 
-Key custom metrics:
+### Key custom metrics
 
 | Metric | Description |
 |--------|-------------|

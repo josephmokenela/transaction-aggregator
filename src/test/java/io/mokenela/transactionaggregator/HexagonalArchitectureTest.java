@@ -63,8 +63,7 @@ class HexagonalArchitectureTest {
             .withImportOption(new ImportOption.DoNotIncludeJars())
             .importPackages(ROOT);
 
-    // ── 1. Layer dependency rules ──────────────────────────────────────────────
-
+    // 1. Layer dependency rules
     /**
      * The domain is the innermost hexagon. It must not know about any outer layer —
      * not the application services that orchestrate it, not the adapters that drive it,
@@ -110,8 +109,7 @@ class HexagonalArchitectureTest {
                 .check(CLASSES);
     }
 
-    // ── 2. Domain framework purity ────────────────────────────────────────────
-
+    // 2. Domain framework purity
     /**
      * Domain classes are plain Java. Spring annotations, reactive types, and
      * persistence mappings belong at the boundaries — never in the domain ring.
@@ -126,8 +124,7 @@ class HexagonalArchitectureTest {
                 .check(CLASSES);
     }
 
-    // ── 3. Port implementations must not be public ────────────────────────────
-
+    // 3. Port implementations must not be public
     /**
      * Any class that directly implements a domain port or use-case interface is an
      * adapter or service implementation. Callers depend on the interface, so making
@@ -155,8 +152,7 @@ class HexagonalArchitectureTest {
                 .check(CLASSES);
     }
 
-    // ── 4. Naming conventions ─────────────────────────────────────────────────
-
+    // 4. Naming conventions
     /**
      * Inbound port interfaces represent application use cases.
      * The {@code UseCase} suffix makes the intent explicit and distinguishes them

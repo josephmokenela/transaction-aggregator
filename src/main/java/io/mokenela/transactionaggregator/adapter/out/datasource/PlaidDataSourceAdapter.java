@@ -104,8 +104,7 @@ class PlaidDataSourceAdapter implements FetchTransactionsPort {
                 .doOnError(ex -> log.error("Plaid fetch failed: {}", ex.getMessage(), ex));
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
-
+    // Private helpers
     private Mono<String> getAccessToken() {
         var cached = tokenCache.get();
         if (cached != null && !cached.isExpired()) return Mono.just(cached.token());

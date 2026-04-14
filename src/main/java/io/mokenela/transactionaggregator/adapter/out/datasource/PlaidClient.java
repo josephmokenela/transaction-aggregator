@@ -129,8 +129,7 @@ class PlaidClient {
         InvalidAccessTokenException(String body) { super("Plaid INVALID_ACCESS_TOKEN: " + body); }
     }
 
-    // ── Request / Response DTOs ───────────────────────────────────────────────
-
+    // Request / Response DTOs
     record CreateSandboxTokenRequest(
             @JsonProperty("client_id") String clientId,
             @JsonProperty("secret") String secret,

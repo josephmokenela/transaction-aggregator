@@ -8,8 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MaskTest {
 
-    // ── Mask.amount ───────────────────────────────────────────────────────────
-
+    // Mask.amount
     @Test
     void amount_shouldReturnStars_forAnyNonNullAmount() {
         assertThat(Mask.amount(new BigDecimal("3500.00"))).isEqualTo("***");
@@ -29,8 +28,7 @@ class MaskTest {
         assertThat(Mask.amount(amount)).doesNotContain("1234567");
     }
 
-    // ── Mask.text ─────────────────────────────────────────────────────────────
-
+    // Mask.text
     @Test
     void text_shouldReturnNullPlaceholder_forNullInput() {
         assertThat(Mask.text(null)).isEqualTo("[null]");

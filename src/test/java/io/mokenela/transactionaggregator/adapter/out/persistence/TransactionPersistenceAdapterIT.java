@@ -36,8 +36,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
     @Autowired
     LoadTransactionPort loadTransactionPort;
 
-    // ── save + loadById ────────────────────────────────────────────────────────
-
+    // save + loadById
     @Test
     void save_shouldPersistTransaction_andLoadById_shouldReturnIt() {
         var tx = sampleTransaction(TransactionType.CREDIT, "1500.00", TransactionCategory.SALARY);
@@ -59,8 +58,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
                 .verifyComplete(); // empty Mono — not an error
     }
 
-    // ── loadByAccountIdAndPeriod ───────────────────────────────────────────────
-
+    // loadByAccountIdAndPeriod
     @Test
     void loadByAccountIdAndPeriod_shouldReturnOnlyTransactionsWithinWindow() {
         var accountId = new AccountId(UUID.randomUUID());
@@ -83,8 +81,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
                 .verifyComplete();
     }
 
-    // ── loadByFilter ──────────────────────────────────────────────────────────
-
+    // loadByFilter
     @Test
     void loadByFilter_shouldFilterByCategory() {
         var accountId = new AccountId(UUID.randomUUID());
@@ -138,8 +135,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
                 .verifyComplete();
     }
 
-    // ── aggregateByFilter ─────────────────────────────────────────────────────
-
+    // aggregateByFilter
     @Test
     void aggregateByFilter_shouldReturnGroupedTotals_withCorrectCountsAndAmounts() {
         var accountId = new AccountId(UUID.randomUUID());
@@ -196,8 +192,7 @@ class TransactionPersistenceAdapterIT extends AbstractIntegrationTest {
                 .verifyComplete();
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
+    // helpers
     private Transaction sampleTransaction(TransactionType type, String amount, TransactionCategory category) {
         return sampleTransactionAt(ACCOUNT_ID, type, amount, category, Instant.now());
     }
