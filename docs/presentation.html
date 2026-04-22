@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transaction Aggregator — Architecture Presentation</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d2e;
+    --surface2: #242840;
+    --accent: #6c63ff;
+    --accent2: #00d4aa;
+    --accent3: #ff6b6b;
+    --accent4: #ffd93d;
+    --text: #e8eaf6;
+    --muted: #9094b0;
+    --border: #2e3150;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .deck { width: 100%; height: 100vh; position: relative; }
+
+  .slide {
+    display: none;
+    width: 100%;
+    height: 100vh;
+    padding: 48px 72px;
+    flex-direction: column;
+    justify-content: center;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  .slide.active { display: flex; }
+
+  /* ── NAV ── */
+  .nav {
+    position: fixed;
+    bottom: 28px;
+    right: 36px;
+    display: flex;
+    gap: 10px;
+    z-index: 100;
+  }
+  .nav button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .nav button:hover { background: var(--accent); border-color: var(--accent); }
+
+  .slide-counter {
+    position: fixed;
+    bottom: 34px;
+    left: 36px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── PROGRESS ── */
+  .progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width .3s ease;
+    z-index: 200;
+  }
+
+  /* ── TYPOGRAPHY ── */
+  h1 { font-size: 52px; font-weight: 800; line-height: 1.1; }
+  h2 { font-size: 36px; font-weight: 700; margin-bottom: 32px; }
+  h3 { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
+  p, li { font-size: 16px; line-height: 1.65; color: var(--muted); }
+  li { margin-bottom: 6px; }
+
+  .tag {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--accent2);
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    margin: 2px;
+  }
+  .tag.purple { color: var(--accent); border-color: var(--accent); background: rgba(108,99,255,.08); }
+  .tag.red { color: var(--accent3); border-color: var(--accent3); background: rgba(255,107,107,.08); }
+  .tag.yellow { color: var(--accent4); border-color: var(--accent4); background: rgba(255,217,61,.08); }
+
+  /* ── SLIDE 1 — TITLE ── */
+  .slide-title {
+    background: radial-gradient(ellipse at 70% 40%, rgba(108,99,255,.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(0,212,170,.08) 0%, transparent 50%),
+                var(--bg);
+    text-align: center;
+    align-items: center;
+  }
+  .slide-title .subtitle {
+    font-size: 22px;
+    color: var(--muted);
+    margin-top: 12px;
+  }
+  .slide-title .pill {
+    margin-top: 32px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* ── SLIDE 2 — OVERVIEW ── */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 8px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+  }
+  .card .icon { font-size: 28px; margin-bottom: 8px; }
+  .card h3 { color: var(--text); }
+  .card p, .card li { font-size: 14px; }
+  .card ul { padding-left: 16px; margin-top: 6px; }
+
+  /* ── ARCH DIAGRAM ── */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin-top: 12px;
+  }
+  .layer {
+    width: 80%;
+    border-radius: 10px;
+    padding: 14px 24px;
+    text-align: center;
+    position: relative;
+  }
+  .layer-label { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .layer-detail { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .arrow-down {
+    font-size: 18px;
+    color: var(--muted);
+    line-height: 1;
+    margin: 2px 0;
+  }
+  .l-domain   { background: rgba(108,99,255,.18); border: 2px solid var(--accent);  }
+  .l-app      { background: rgba(0,212,170,.12);  border: 2px solid var(--accent2); }
+  .l-adapters { background: rgba(255,217,61,.10); border: 2px solid var(--accent4); }
+  .l-infra    { background: rgba(255,107,107,.10); border: 2px solid var(--accent3); }
+
+  .adapters-row {
+    width: 80%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .adapters-row .layer { width: 100%; }
+
+  /* ── TECH STACK ── */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .stack-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stack-card h3 { font-size: 14px; color: var(--accent2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .06em; }
+  .stack-card .item { font-size: 13px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .stack-card .item::before { content: '▸'; color: var(--accent); font-size: 10px; flex-shrink: 0; }
+
+  /* ── DOMAIN MODEL ── */
+  .domain-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 24px;
+    margin-top: 8px;
+  }
+  .entity-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 12px;
+  }
+  .entity-box h3 { font-size: 14px; font-family: monospace; color: var(--accent); margin-bottom: 8px; }
+  .entity-box .field { font-size: 12px; color: var(--muted); margin-bottom: 3px; font-family: monospace; }
+  .entity-box .field span { color: var(--accent2); }
+
+  .vo-section h3 { font-size: 15px; color: var(--text); margin-bottom: 10px; }
+  .vo-list { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+
+  /* ── API ── */
+  .api-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+  .api-table th {
+    background: var(--surface2);
+    color: var(--muted);
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .api-table td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .api-table tr:last-child td { border-bottom: none; }
+  .method {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: monospace;
+  }
+  .get  { background: rgba(0,212,170,.15); color: var(--accent2); }
+  .post { background: rgba(108,99,255,.18); color: var(--accent); }
+  .endpoint { font-family: monospace; font-size: 13px; color: var(--text); }
+  .role-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-right: 3px;
+  }
+  .role-admin { background: rgba(255,107,107,.15); color: var(--accent3); }
+  .role-cust  { background: rgba(108,99,255,.15); color: var(--accent); }
+
+  /* ── REACTIVE ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .pipe-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 110px;
+    flex-shrink: 0;
+  }
+  .pipe-step .label { font-size: 12px; font-weight: 700; color: var(--accent2); }
+  .pipe-step .detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .pipe-arrow { color: var(--accent); font-size: 20px; padding: 0 6px; flex-shrink: 0; }
+
+  .reactive-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  /* ── OBSERVABILITY ── */
+  .obs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 12px;
+  }
+  .obs-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+  }
+  .obs-card .icon { font-size: 24px; margin-bottom: 8px; }
+  .obs-card h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+  .obs-card ul { padding-left: 14px; }
+  .obs-card li { font-size: 13px; }
+
+  /* ── TESTING ── */
+  .testing-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+  }
+  .test-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .test-card h3 { font-size: 14px; margin-bottom: 8px; }
+  .test-card li { font-size: 13px; }
+  .test-card ul { padding-left: 14px; }
+
+  .coverage-bar-wrap { margin-top: 20px; }
+  .coverage-bar-wrap h3 { font-size: 14px; margin-bottom: 10px; color: var(--text); }
+  .cov-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .cov-label { font-size: 13px; color: var(--muted); width: 160px; flex-shrink: 0; }
+  .cov-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 8px; }
+  .cov-fill { height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .cov-pct { font-size: 13px; color: var(--accent2); width: 40px; text-align: right; }
+
+  /* ── ADR ── */
+  .adr-list { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .adr-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    border-left: 4px solid var(--accent);
+  }
+  .adr-card.green { border-left-color: var(--accent2); }
+  .adr-card.yellow { border-left-color: var(--accent4); }
+  .adr-card.red { border-left-color: var(--accent3); }
+  .adr-card .adr-num { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+  .adr-card h3 { font-size: 15px; margin-bottom: 6px; }
+  .adr-card p { font-size: 13px; }
+
+  /* ── CLOSING ── */
+  .slide-closing {
+    background: radial-gradient(ellipse at 30% 60%, rgba(0,212,170,.1) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, rgba(108,99,255,.12) 0%, transparent 50%),
+                var(--bg);
+    text-align: center;
+    align-items: center;
+  }
+  .closing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 32px 0;
+    width: 100%;
+  }
+  .closing-stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  .closing-stat .num { font-size: 36px; font-weight: 800; color: var(--accent2); }
+  .closing-stat .desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── ACCENT HEADINGS ── */
+  .accent { color: var(--accent2); }
+  .accent-p { color: var(--accent); }
+  .divider { width: 60px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); margin-bottom: 20px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+  .two-col-3-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 28px; align-items: start; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<div class="deck">
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 1 — TITLE
+  ══════════════════════════════════════════════ -->
+  <section class="slide slide-title active" data-index="0">
+    <h1>Transaction<br><span class="accent">Aggregator</span></h1>
+    <p class="subtitle">A production-grade reactive financial data platform</p>
+    <div class="pill">
+      <span class="tag purple">Spring Boot 3.4</span>
+      <span class="tag">WebFlux + R2DBC</span>
+      <span class="tag yellow">Hexagonal Architecture</span>
+      <span class="tag">Java 21</span>
+      <span class="tag purple">Apache Kafka</span>
+      <span class="tag">PostgreSQL 17</span>
+      <span class="tag">Testcontainers</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 2 — WHAT IT DOES
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="1">
+    <h2>What does it do?</h2>
+    <div class="divider"></div>
+    <div class="overview-grid">
+      <div class="card">
+        <div class="icon">🔄</div>
+        <h3>Multi-source data sync</h3>
+        <p>Pulls transactions from pluggable data sources — mock banks, card providers, payment networks, and Plaid — through a unified port interface. No business logic changes when adding a new source.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📊</div>
+        <h3>Aggregation &amp; analytics</h3>
+        <p>Groups transactions by account and time period (hourly → yearly). Computes per-category spend breakdowns with rule-based keyword classification.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⚡</div>
+        <h3>Real-time Kafka ingestion</h3>
+        <p>Batch consumer reads synthetic transaction events off Kafka topics, persists via reactive R2DBC pipeline, routes failures to a Dead-Letter Topic for safe reprocessing.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔐</div>
+        <h3>Secured REST API</h3>
+        <p>JWT (HMAC-SHA256) with two roles — Customer and Admin. Rate-limited token issuance. Fine-grained access control: customers see only their own data.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 3 — HEXAGONAL ARCHITECTURE
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="2">
+    <h2>Architecture — Hexagonal (Ports &amp; Adapters)</h2>
+    <div class="divider"></div>
+    <div class="two-col" style="align-items: center; grid-template-columns: 2fr 1fr;">
+      <div style="display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:780px;display:block;">
+          <defs>
+            <radialGradient id="gDomain" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#6c63ff" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#6c63ff" stop-opacity="0.12"/>
+            </radialGradient>
+            <marker id="arrowPurple" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0,0.5 L6,3.5 L0,6.5 Z" fill="#6c63ff" opacity="0.7"/>
+            </marker>
+            <marker id="arrowTeal" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0,0.5 L6,3.5 L0,6.5 Z" fill="#00d4aa" opacity="0.7"/>
+            </marker>
+          </defs>
+
+          <!-- ── Infrastructure ring (outermost) ── -->
+          <circle cx="250" cy="250" r="242" fill="rgba(255,107,107,0.07)" stroke="#ff6b6b" stroke-width="2.5"/>
+
+          <!-- ── Adapters ring ── -->
+          <circle cx="250" cy="250" r="190" fill="rgba(255,217,61,0.09)" stroke="#ffd93d" stroke-width="2"/>
+
+          <!-- ── Application ring ── -->
+          <circle cx="250" cy="250" r="128" fill="rgba(0,212,170,0.11)" stroke="#00d4aa" stroke-width="2"/>
+
+          <!-- ── Domain core ── -->
+          <circle cx="250" cy="250" r="70" fill="url(#gDomain)" stroke="#6c63ff" stroke-width="3"/>
+
+          <!-- Dashed vertical divider splitting adapters ring L / R -->
+          <line x1="250" y1="62"  x2="250" y2="122" stroke="#ffd93d" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>
+          <line x1="250" y1="190" x2="250" y2="438" stroke="#ffd93d" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>
+
+          <!-- ── DOMAIN labels ── -->
+          <text x="250" y="242" text-anchor="middle" fill="#b0a8ff" font-size="14"   font-weight="700" font-family="system-ui,sans-serif">Domain</text>
+          <text x="250" y="257" text-anchor="middle" fill="#8890b0" font-size="9.5"  font-family="system-ui,sans-serif">Entities · Value Objects</text>
+          <text x="250" y="270" text-anchor="middle" fill="#8890b0" font-size="9.5"  font-family="system-ui,sans-serif">Port Interfaces</text>
+
+          <!-- ── APPLICATION labels (top band) ── -->
+          <text x="250" y="153" text-anchor="middle" fill="#00d4aa" font-size="12.5" font-weight="700" font-family="system-ui,sans-serif">Application</text>
+          <text x="250" y="167" text-anchor="middle" fill="#8890b0" font-size="9.5"  font-family="system-ui,sans-serif">Use-Case Services</text>
+          <!-- app ring bottom band -->
+          <text x="250" y="356" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">Orchestration via Ports only</text>
+
+          <!-- ── ADAPTERS Inbound (left half) ── -->
+          <text x="92"  y="242" text-anchor="middle" fill="#ffd93d" font-size="11.5" font-weight="700" font-family="system-ui,sans-serif">Inbound</text>
+          <text x="92"  y="257" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">HTTP Controllers</text>
+          <text x="92"  y="270" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">Kafka Consumer</text>
+
+          <!-- ── ADAPTERS Outbound (right half) ── -->
+          <text x="408" y="242" text-anchor="middle" fill="#ffd93d" font-size="11.5" font-weight="700" font-family="system-ui,sans-serif">Outbound</text>
+          <text x="408" y="257" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">R2DBC Persistence</text>
+          <text x="408" y="270" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">Plaid · Mock Sources</text>
+
+          <!-- ── INFRASTRUCTURE labels (top band) ── -->
+          <text x="250" y="30"  text-anchor="middle" fill="#ff9a9a" font-size="12"   font-weight="700" font-family="system-ui,sans-serif">Infrastructure</text>
+          <text x="250" y="45"  text-anchor="middle" fill="#8890b0" font-size="9.5"  font-family="system-ui,sans-serif">PostgreSQL · Kafka · Vault · Spring Config</text>
+          <!-- infra bottom band -->
+          <text x="250" y="463" text-anchor="middle" fill="#8890b0" font-size="9.5"  font-family="system-ui,sans-serif">Prometheus · Grafana · Zipkin</text>
+          <text x="250" y="477" text-anchor="middle" fill="#8890b0" font-size="9"    font-family="system-ui,sans-serif">Docker Compose · Kafka UI</text>
+
+          <!-- Subtle inward arrows showing dependency direction -->
+          <!-- Left: inbound → application -->
+          <line x1="148" y1="220" x2="133" y2="208"
+                stroke="#ffd93d" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.45"
+                marker-end="url(#arrowPurple)"/>
+          <!-- Right: outbound → application -->
+          <line x1="352" y1="220" x2="367" y2="208"
+                stroke="#ffd93d" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.45"
+                marker-end="url(#arrowTeal)"/>
+
+          <!-- "Dependencies →inward" footnote -->
+          <text x="250" y="496" text-anchor="middle" fill="#505470" font-size="8.5" font-style="italic" font-family="system-ui,sans-serif">← dependencies point inward →</text>
+        </svg>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px;">
+          <h3 style="color:var(--accent)">Dependency Rule</h3>
+          <p style="font-size:13px;margin-top:6px;">Dependencies point <strong style="color:var(--text)">inward only</strong>. The domain knows nothing about Spring, the database, or Kafka. Adapters implement ports defined by the domain.</p>
+        </div>
+        <div class="card" style="margin-bottom:14px;">
+          <h3 style="color:var(--accent2)">Enforced by ArchUnit</h3>
+          <p style="font-size:13px;margin-top:6px;">Architecture rules are <strong style="color:var(--text)">compiled into tests</strong>. A bad import fails the build. No discipline required at review time.</p>
+        </div>
+        <div class="card">
+          <h3 style="color:var(--accent4)">Why it matters</h3>
+          <ul style="padding-left:16px;margin-top:6px;">
+            <li style="font-size:13px;">Swap a data source without touching business logic</li>
+            <li style="font-size:13px;">Unit-test domain services with no DB or broker</li>
+            <li style="font-size:13px;">Migrate from PostgreSQL to another DB by writing one adapter</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 4 — TECHNOLOGY STACK
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="3">
+    <h2>Technology Stack</h2>
+    <div class="divider"></div>
+    <div class="stack-grid">
+      <div class="stack-card">
+        <h3>Core Framework</h3>
+        <div class="item">Spring Boot 3.4.5 (Java 21)</div>
+        <div class="item">Spring WebFlux — Netty event loop</div>
+        <div class="item">Project Reactor — Mono / Flux</div>
+        <div class="item">Lombok — boilerplate elimination</div>
+      </div>
+      <div class="stack-card">
+        <h3>Data &amp; Messaging</h3>
+        <div class="item">PostgreSQL 17 with R2DBC (non-blocking)</div>
+        <div class="item">Flyway — versioned SQL migrations</div>
+        <div class="item">Apache Kafka — batch consumer + DLT</div>
+        <div class="item">R2DBC Connection Pool</div>
+      </div>
+      <div class="stack-card">
+        <h3>Security</h3>
+        <div class="item">Spring Security — JWT resource server</div>
+        <div class="item">HMAC-SHA256 token signing</div>
+        <div class="item">HashiCorp Vault — secrets management</div>
+        <div class="item">Resilience4j — rate limiting on auth</div>
+      </div>
+      <div class="stack-card">
+        <h3>Observability</h3>
+        <div class="item">Micrometer + Prometheus exporter</div>
+        <div class="item">OpenTelemetry + Zipkin (distributed tracing)</div>
+        <div class="item">Custom health indicators (DB + Kafka)</div>
+        <div class="item">Correlation ID propagation (X-Request-ID)</div>
+      </div>
+      <div class="stack-card">
+        <h3>API &amp; Docs</h3>
+        <div class="item">SpringDoc OpenAPI 2.8 (Swagger UI)</div>
+        <div class="item">OpenAPI 3.0 spec auto-generated</div>
+        <div class="item">URL versioning — /api/v1/</div>
+        <div class="item">Jackson + Java Time serialization</div>
+      </div>
+      <div class="stack-card">
+        <h3>Testing</h3>
+        <div class="item">JUnit 5 + AssertJ</div>
+        <div class="item">Testcontainers — real PostgreSQL in CI</div>
+        <div class="item">ArchUnit — architecture enforcement</div>
+        <div class="item">BlockHound — reactive safety detection</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 5 — DOMAIN MODEL
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="4">
+    <h2>Domain Model</h2>
+    <div class="divider"></div>
+    <div class="domain-grid">
+      <div>
+        <div class="entity-box">
+          <h3>Customer</h3>
+          <div class="field">id: <span>CustomerId (UUID)</span></div>
+          <div class="field">name: <span>String</span></div>
+          <div class="field">email: <span>String (unique)</span></div>
+        </div>
+        <div class="entity-box">
+          <h3>Account</h3>
+          <div class="field">id: <span>AccountId (UUID)</span></div>
+          <div class="field">customerId: <span>CustomerId</span></div>
+          <div class="field">name: <span>String</span></div>
+          <div class="field">source: <span>String</span></div>
+        </div>
+        <div class="entity-box">
+          <h3>Transaction <span style="font-size:11px;color:var(--muted);">(immutable Record)</span></h3>
+          <div class="field">id: <span>TransactionId</span></div>
+          <div class="field">customerId / accountId</div>
+          <div class="field">amount: <span>Money (BigDecimal + currency)</span></div>
+          <div class="field">type: <span>CREDIT | DEBIT</span></div>
+          <div class="field">status: <span>COMPLETED | PENDING | FAILED</span></div>
+          <div class="field">category: <span>TransactionCategory</span></div>
+          <div class="field">dataSourceId, merchantName, occurredAt</div>
+        </div>
+      </div>
+      <div>
+        <div class="vo-section">
+          <h3 style="color:var(--accent2);font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Value Objects</h3>
+          <div class="vo-list">
+            <span class="tag purple">CustomerId</span>
+            <span class="tag purple">TransactionId</span>
+            <span class="tag purple">AccountId</span>
+            <span class="tag purple">DataSourceId</span>
+            <span class="tag">Money</span>
+          </div>
+        </div>
+        <div class="vo-section" style="margin-top:14px;">
+          <h3 style="color:var(--accent4);font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Transaction Categories</h3>
+          <div class="vo-list">
+            <span class="tag yellow">SALARY</span><span class="tag yellow">RENT</span>
+            <span class="tag yellow">TRANSFER</span><span class="tag yellow">FOOD</span>
+            <span class="tag yellow">TRANSPORT</span><span class="tag yellow">UTILITIES</span>
+            <span class="tag yellow">SHOPPING</span><span class="tag yellow">HEALTHCARE</span>
+            <span class="tag yellow">EDUCATION</span><span class="tag yellow">OTHER</span>
+          </div>
+        </div>
+        <div class="entity-box" style="margin-top:14px;">
+          <h3>TransactionSummary</h3>
+          <div class="field">totalCredits, totalDebits: <span>Money</span></div>
+          <div class="field">netAmount: <span>Money</span></div>
+          <div class="field">transactionCount: <span>int</span></div>
+          <div class="field">period: <span>AggregationPeriod</span></div>
+        </div>
+        <div style="margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;">
+          <p style="font-size:12px;color:var(--muted);">
+            <strong style="color:var(--accent);">Enums in PostgreSQL</strong> — type, status, category all use native PG enums for type safety at the DB level. R2DBC positional casts (<code style="color:var(--accent2);">$1::transaction_category</code>) handle binding.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 6 — REST API
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="5">
+    <h2>REST API &mdash; <code style="font-size:24px;color:var(--accent2);">/api/v1/</code></h2>
+    <div class="divider"></div>
+    <table class="api-table">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Endpoint</th>
+          <th>Description</th>
+          <th>Access</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="method post">POST</span></td>
+          <td><span class="endpoint">/auth/token</span></td>
+          <td style="color:var(--muted);font-size:13px;">Issue customer JWT (rate-limited 10/min)</td>
+          <td><span class="role-badge" style="background:rgba(0,212,170,.1);color:var(--accent2);">Public</span></td>
+        </tr>
+        <tr>
+          <td><span class="method get">GET</span></td>
+          <td><span class="endpoint">/customers</span></td>
+          <td style="color:var(--muted);font-size:13px;">List all customers (paginated)</td>
+          <td><span class="role-badge role-admin">Admin</span></td>
+        </tr>
+        <tr>
+          <td><span class="method get">GET</span></td>
+          <td><span class="endpoint">/customers/{id}/summary</span></td>
+          <td style="color:var(--muted);font-size:13px;">Financial summary for a date range</td>
+          <td><span class="role-badge role-admin">Admin</span><span class="role-badge role-cust">Customer*</span></td>
+        </tr>
+        <tr>
+          <td><span class="method get">GET</span></td>
+          <td><span class="endpoint">/customers/{id}/categories</span></td>
+          <td style="color:var(--muted);font-size:13px;">Category spend breakdown + percentages</td>
+          <td><span class="role-badge role-admin">Admin</span><span class="role-badge role-cust">Customer*</span></td>
+        </tr>
+        <tr>
+          <td><span class="method get">GET</span></td>
+          <td><span class="endpoint">/transactions/aggregate</span></td>
+          <td style="color:var(--muted);font-size:13px;">Aggregated totals by account &amp; period</td>
+          <td><span class="role-badge role-admin">Admin</span><span class="role-badge role-cust">Customer*</span></td>
+        </tr>
+        <tr>
+          <td><span class="method post">POST</span></td>
+          <td><span class="endpoint">/transactions</span></td>
+          <td style="color:var(--muted);font-size:13px;">Record a manual transaction</td>
+          <td><span class="role-badge role-admin">Admin</span></td>
+        </tr>
+        <tr>
+          <td><span class="method post">POST</span></td>
+          <td><span class="endpoint">/sync</span></td>
+          <td style="color:var(--muted);font-size:13px;">Trigger sync from all data sources</td>
+          <td><span class="role-badge role-admin">Admin</span></td>
+        </tr>
+        <tr>
+          <td><span class="method post">POST</span></td>
+          <td><span class="endpoint">/kafka/generate</span></td>
+          <td style="color:var(--muted);font-size:13px;">Publish synthetic events to Kafka</td>
+          <td><span class="role-badge role-admin">Admin</span></td>
+        </tr>
+        <tr>
+          <td><span class="method get">GET</span></td>
+          <td><span class="endpoint">/actuator/health</span></td>
+          <td style="color:var(--muted);font-size:13px;">System health (DB + Kafka indicators)</td>
+          <td><span class="role-badge" style="background:rgba(0,212,170,.1);color:var(--accent2);">Public</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px;font-size:12px;">* Customers can only access their own data — cross-customer access returns <code style="color:var(--accent3);">403 Forbidden</code></p>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 7 — REACTIVE PIPELINE
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="6">
+    <h2>Reactive Data Pipeline</h2>
+    <div class="divider"></div>
+    <div style="margin-bottom:20px;">
+      <p style="font-size:14px;color:var(--muted);margin-bottom:6px;font-weight:600;color:var(--text);">HTTP Request Flow (WebFlux)</p>
+      <div class="pipeline">
+        <div class="pipe-step"><div class="label">Netty</div><div class="detail">Event loop<br>Non-blocking I/O</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Controller</div><div class="detail">Returns Mono<br>or Flux</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Use Case</div><div class="detail">Calls port<br>interfaces only</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Service</div><div class="detail">Domain logic<br>on Flux chains</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">R2DBC</div><div class="detail">Non-blocking<br>DB queries</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Netty</div><div class="detail">Stream response<br>to client</div></div>
+      </div>
+    </div>
+    <div>
+      <p style="font-size:14px;color:var(--text);margin-bottom:6px;font-weight:600;">Kafka Consumer Flow</p>
+      <div class="pipeline">
+        <div class="pipe-step"><div class="label">Kafka Poll</div><div class="detail">Batch up to<br>250 events</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Flux.from</div><div class="detail">Reactive<br>pipeline</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Map</div><div class="detail">Event →<br>Transaction</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">R2DBC</div><div class="detail">Upsert with<br>3x retry</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step"><div class="label">Ack</div><div class="detail">Manual offset<br>commit</div></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step" style="border-color:var(--accent3)"><div class="label" style="color:var(--accent3)">DLT</div><div class="detail">Failed events<br>rerouted</div></div>
+      </div>
+    </div>
+    <div class="reactive-cards">
+      <div class="card">
+        <h3 style="color:var(--accent)">Why reactive?</h3>
+        <p style="font-size:13px;margin-top:6px;">One event-loop thread handles thousands of concurrent connections without blocking. Critical for an aggregator that fans out to multiple upstream sources simultaneously.</p>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--accent3)">Blocking rule</h3>
+        <p style="font-size:13px;margin-top:6px;"><strong style="color:var(--text)">BlockHound</strong> is active in tests. Any blocking call on a reactor thread fails the test immediately. Flyway is the only exception — it runs before the reactor starts on a dedicated thread.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 8 — OBSERVABILITY
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="7">
+    <h2>Observability &amp; Infrastructure</h2>
+    <div class="divider"></div>
+    <div class="obs-grid">
+      <div class="obs-card">
+        <div class="icon">📈</div>
+        <h3>Metrics — Prometheus + Grafana</h3>
+        <ul>
+          <li>Micrometer Prometheus registry on <code style="font-size:12px;">/actuator/prometheus</code></li>
+          <li>HTTP latency histograms with percentiles (p50/p95/p99)</li>
+          <li>Custom counters: <code style="font-size:12px;">transactions.recorded</code>, <code style="font-size:12px;">sync.errors</code></li>
+          <li>Custom timers: <code style="font-size:12px;">plaid.fetch.duration</code></li>
+          <li>Grafana pre-provisioned with dashboards on port 3000</li>
+        </ul>
+      </div>
+      <div class="obs-card">
+        <div class="icon">🔍</div>
+        <h3>Distributed Tracing — Zipkin</h3>
+        <ul>
+          <li>OpenTelemetry SDK + Zipkin exporter</li>
+          <li>Micrometer tracing bridge for seamless integration</li>
+          <li>100% sampling rate in dev (tune via config in prod)</li>
+          <li>Spans propagate through Reactor context automatically</li>
+          <li>Zipkin UI on port 9411</li>
+        </ul>
+      </div>
+      <div class="obs-card">
+        <div class="icon">🏥</div>
+        <h3>Health Checks</h3>
+        <ul>
+          <li>Custom <code style="font-size:12px;">DatabaseHealthIndicator</code> — test R2DBC query</li>
+          <li>Custom <code style="font-size:12px;">KafkaHealthIndicator</code> — broker connectivity</li>
+          <li>Aggregated on <code style="font-size:12px;">/actuator/health</code> with full details</li>
+          <li>Docker Compose waits on health checks before starting app</li>
+        </ul>
+      </div>
+      <div class="obs-card">
+        <div class="icon">🔗</div>
+        <h3>Correlation IDs</h3>
+        <ul>
+          <li><code style="font-size:12px;">CorrelationIdFilter</code> at HIGHEST_PRECEDENCE</li>
+          <li>Accepts client <code style="font-size:12px;">X-Request-ID</code> or generates a UUID</li>
+          <li>Propagated via Reactor Context through the entire pipeline</li>
+          <li>Echoed in every response — aids cross-service log correlation</li>
+          <li><code style="font-size:12px;">X-API-Version: 1</code> stamped on all responses</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 20px;display:flex;gap:24px;align-items:center;">
+      <span style="font-size:13px;color:var(--muted)"><strong style="color:var(--text)">Docker Compose stack:</strong></span>
+      <span class="tag">PostgreSQL :5432</span>
+      <span class="tag purple">Kafka :9092</span>
+      <span class="tag">Kafka UI :8090</span>
+      <span class="tag yellow">Vault :8200</span>
+      <span class="tag">Prometheus :9090</span>
+      <span class="tag">Grafana :3000</span>
+      <span class="tag purple">Zipkin :9411</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 9 — TESTING
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="8">
+    <h2>Testing Strategy</h2>
+    <div class="divider"></div>
+    <div class="testing-row">
+      <div class="test-card">
+        <h3 style="color:var(--accent)">Unit Tests</h3>
+        <ul>
+          <li>Pure domain logic in isolation</li>
+          <li>No Spring context — fast feedback</li>
+          <li>Port interfaces mocked with hand-rolled stubs</li>
+          <li>AssertJ fluent assertions</li>
+          <li>reactor-test StepVerifier for Flux/Mono</li>
+        </ul>
+      </div>
+      <div class="test-card">
+        <h3 style="color:var(--accent2)">Integration Tests</h3>
+        <ul>
+          <li>Testcontainers — real PostgreSQL 17 in Docker</li>
+          <li>Static container (shared across subclasses)</li>
+          <li>WebTestClient for full HTTP round-trips</li>
+          <li>Tests auth, pagination, and access control</li>
+          <li>Flyway migrations run in the test container</li>
+        </ul>
+      </div>
+      <div class="test-card">
+        <h3 style="color:var(--accent4)">Architecture Tests</h3>
+        <ul>
+          <li>ArchUnit enforces hexagonal layer rules</li>
+          <li>Domain must not import Spring/JDBC</li>
+          <li>Inbound adapters must not import outbound</li>
+          <li>Port implementors must be package-private</li>
+          <li>Naming convention enforcement (UseCase, Port)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="coverage-bar-wrap">
+      <h3>JaCoCo Coverage Gates</h3>
+      <div class="cov-row">
+        <div class="cov-label">Overall line coverage</div>
+        <div class="cov-track"><div class="cov-fill" style="width:75%"></div></div>
+        <div class="cov-pct">75%+</div>
+      </div>
+      <div class="cov-row">
+        <div class="cov-label">Service layer (business logic)</div>
+        <div class="cov-track"><div class="cov-fill" style="width:90%"></div></div>
+        <div class="cov-pct">90%+</div>
+      </div>
+      <div class="cov-row">
+        <div class="cov-label">Adapter layer (infra)</div>
+        <div class="cov-track"><div class="cov-fill" style="width:40%;background:linear-gradient(90deg,var(--muted),var(--muted))"></div></div>
+        <div class="cov-pct" style="color:var(--muted)">Excluded</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 10 — ARCHITECTURAL DECISIONS
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="9">
+    <h2>Key Architectural Decisions (ADRs)</h2>
+    <div class="divider"></div>
+    <div class="adr-list">
+      <div class="adr-card">
+        <div class="adr-num">ADR-001</div>
+        <h3>Hexagonal Architecture</h3>
+        <p>Domain logic is framework-independent. Adapters are mechanical — swappable without touching business rules. Enforced at build time by ArchUnit tests.</p>
+      </div>
+      <div class="adr-card green">
+        <div class="adr-num">ADR-002</div>
+        <h3>Reactive Stack (WebFlux + R2DBC)</h3>
+        <p>Non-blocking I/O end-to-end. Backpressure propagates from DB all the way to the HTTP response. Required tradeoff: no blocking calls in the Reactor pipeline.</p>
+      </div>
+      <div class="adr-card yellow">
+        <div class="adr-num">ADR-003 + 004</div>
+        <h3>Self-Issued JWTs + Vault</h3>
+        <p>App issues its own HMAC-SHA256 tokens for evaluation. Secrets sourced from HashiCorp Vault in docker/prod. Local dev fallback with obvious keys prevents accidental production use.</p>
+      </div>
+      <div class="adr-card green">
+        <div class="adr-num">ADR-005</div>
+        <h3>Kafka Schema Versioning</h3>
+        <p>Explicit version field in event payloads. Consumer tolerates unknown fields. Supports rolling upgrades with consumer lag — old consumers continue processing until restarted.</p>
+      </div>
+      <div class="adr-card red">
+        <div class="adr-num">ADR-006</div>
+        <h3>API Versioning Policy</h3>
+        <p>URL path versioning at <code style="font-size:12px;">/api/v1/</code>. Explicit definition of breaking vs. non-breaking changes. Deprecated versions supported 6+ months; sunset returns <code style="font-size:12px;">410 Gone</code>.</p>
+      </div>
+      <div class="adr-card">
+        <div class="adr-num">Design Choice</div>
+        <h3>Rule-Based Categorisation</h3>
+        <p>Keyword matching on merchant name + description. Ordered rules — TRANSFER before FOOD prevents "Uber Eats" being classified as TRANSPORT. Returns OTHER if no rule matches.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 11 — SECURITY MODEL
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="10">
+    <h2>Security Model</h2>
+    <div class="divider"></div>
+
+    <!-- JWT flow -->
+    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">JWT Issuance &amp; Verification Flow</p>
+    <div class="pipeline" style="margin-bottom:20px;">
+      <div class="pipe-step" style="border-color:var(--accent3);">
+        <div class="label" style="color:var(--accent3);">Client</div>
+        <div class="detail">POST /auth/token<br>+ credentials</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Rate Limiter</div>
+        <div class="detail">Resilience4j<br>10 req / min</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Vault</div>
+        <div class="detail">Fetch HMAC-SHA256<br>signing secret</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:var(--accent2);">
+        <div class="label" style="color:var(--accent2);">Sign JWT</div>
+        <div class="detail">sub: CustomerId<br>roles claim</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Bearer Token</div>
+        <div class="detail">Returned<br>to client</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">JWT Filter</div>
+        <div class="detail">Verify signature<br>Extract roles</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:var(--accent2);">
+        <div class="label" style="color:var(--accent2);">Authorize</div>
+        <div class="detail">Role + ownership<br>check per route</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+      <div class="card">
+        <h3 style="color:var(--accent);">Role Hierarchy</h3>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+          <div style="background:rgba(255,107,107,.12);border:1px solid var(--accent3);border-radius:6px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent3);margin-bottom:4px;">ROLE_ADMIN</div>
+            <div style="font-size:11px;color:var(--muted);">All endpoints · all customers · sync · kafka</div>
+          </div>
+          <div style="text-align:center;font-size:11px;color:var(--muted);">inherits ↓</div>
+          <div style="background:rgba(108,99,255,.12);border:1px solid var(--accent);border-radius:6px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:4px;">ROLE_CUSTOMER</div>
+            <div style="font-size:11px;color:var(--muted);">Own summary · categories · transactions only</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent2);">JWT Claims</h3>
+        <div style="margin-top:10px;font-family:monospace;font-size:12px;background:var(--surface2);border-radius:6px;padding:12px;">
+          <div style="color:var(--muted);">{</div>
+          <div style="padding-left:12px;"><span style="color:var(--accent4);">"sub"</span><span style="color:var(--muted);">: </span><span style="color:var(--accent2);">"&lt;CustomerId&gt;"</span><span style="color:var(--muted);">,</span></div>
+          <div style="padding-left:12px;"><span style="color:var(--accent4);">"roles"</span><span style="color:var(--muted);">: </span><span style="color:var(--accent2);">["ROLE_CUSTOMER"]</span><span style="color:var(--muted);">,</span></div>
+          <div style="padding-left:12px;"><span style="color:var(--accent4);">"iat"</span><span style="color:var(--muted);">: </span><span style="color:var(--accent);">1713654000</span><span style="color:var(--muted);">,</span></div>
+          <div style="padding-left:12px;"><span style="color:var(--accent4);">"exp"</span><span style="color:var(--muted);">: </span><span style="color:var(--accent);">1713740400</span></div>
+          <div style="color:var(--muted);">}</div>
+        </div>
+        <p style="font-size:11px;margin-top:8px;">Signed with HMAC-SHA256 · min 32-char secret</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent4);">Access Control Rules</h3>
+        <ul style="padding-left:14px;margin-top:8px;">
+          <li style="font-size:12px;">Customer reads own data → <span style="color:var(--accent2);">200 OK</span></li>
+          <li style="font-size:12px;">Customer reads other's data → <span style="color:var(--accent3);">403 Forbidden</span></li>
+          <li style="font-size:12px;">No token on protected route → <span style="color:var(--accent3);">401 Unauthorized</span></li>
+          <li style="font-size:12px;">Customer hits admin route → <span style="color:var(--accent3);">403 Forbidden</span></li>
+          <li style="font-size:12px;">Vault sourced secret in prod; obvious local-dev fallback prevents accidental reuse</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 12 — DATA SYNC FLOW
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="11">
+    <h2>Data Sync Flow</h2>
+    <div class="divider"></div>
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:28px;align-items:start;">
+      <!-- Fan-out diagram -->
+      <div>
+        <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:16px;">POST /api/v1/sync  →  fan-out across all registered sources</p>
+        <div style="display:flex;align-items:center;gap:0;">
+
+          <!-- Trigger -->
+          <div style="background:var(--surface);border:2px solid var(--accent);border-radius:10px;padding:14px 18px;text-align:center;min-width:110px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent);">DataSync<br>Service</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px;">triggers all<br>registered ports</div>
+          </div>
+
+          <!-- Fan-out arrows + sources -->
+          <div style="display:flex;flex-direction:column;gap:8px;margin:0 16px;flex-shrink:0;">
+            <div style="display:flex;align-items:center;gap:8px;" class="sync-row">
+              <div style="width:40px;height:1px;background:var(--muted);opacity:.5;"></div>
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;min-width:120px;">
+                <span style="color:var(--accent2);font-weight:600;">Mock Bank</span>
+                <div style="color:var(--muted);font-size:10px;margin-top:2px;">salary, rent, utilities</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:40px;height:1px;background:var(--muted);opacity:.5;"></div>
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;min-width:120px;">
+                <span style="color:var(--accent2);font-weight:600;">Mock Card</span>
+                <div style="color:var(--muted);font-size:10px;margin-top:2px;">shopping, dining</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:40px;height:1px;background:var(--muted);opacity:.5;"></div>
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;min-width:120px;">
+                <span style="color:var(--accent2);font-weight:600;">Mock Payment</span>
+                <div style="color:var(--muted);font-size:10px;margin-top:2px;">transfers, p2p</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:40px;height:1px;background:var(--muted);opacity:.5;"></div>
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;min-width:120px;">
+                <span style="color:var(--accent4);font-weight:600;">Plaid</span>
+                <div style="color:var(--muted);font-size:10px;margin-top:2px;">real bank data (if enabled)</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Converge arrow -->
+          <div style="font-size:20px;color:var(--muted);flex-shrink:0;">→</div>
+
+          <!-- Processing steps -->
+          <div style="display:flex;flex-direction:column;gap:8px;margin-left:8px;flex-shrink:0;">
+            <div class="pipe-step" style="min-width:130px;">
+              <div class="label">Categorise</div>
+              <div class="detail">Keyword rules<br>→ TransactionCategory</div>
+            </div>
+            <div style="font-size:14px;color:var(--muted);text-align:center;">↓</div>
+            <div class="pipe-step" style="min-width:130px;border-color:var(--accent2);">
+              <div class="label" style="color:var(--accent2);">R2DBC Upsert</div>
+              <div class="detail">Persist or update<br>existing record</div>
+            </div>
+            <div style="font-size:14px;color:var(--muted);text-align:center;">↓</div>
+            <div class="pipe-step" style="min-width:130px;border-color:var(--accent);">
+              <div class="label" style="color:var(--accent);">SyncResult</div>
+              <div class="detail">Count per source<br>returned to caller</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Key design notes -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="card">
+          <h3 style="color:var(--accent);">Pluggable Sources</h3>
+          <p style="font-size:12px;margin-top:6px;">Each data source implements <code style="color:var(--accent2);font-size:11px;">FetchTransactionsPort</code>. Adding a new provider means writing one adapter — zero changes to business logic.</p>
+        </div>
+        <div class="card">
+          <h3 style="color:var(--accent3);">Fault Isolation</h3>
+          <p style="font-size:12px;margin-top:6px;">Errors in one source are logged and counted but do not cancel the others. All sources run independently via reactive <code style="color:var(--accent2);font-size:11px;">Flux</code> chains.</p>
+        </div>
+        <div class="card">
+          <h3 style="color:var(--accent2);">Idempotent Upserts</h3>
+          <p style="font-size:12px;margin-top:6px;">Re-syncing the same date range is safe. Transactions are upserted by ID — duplicates update in place rather than creating new rows.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 13 — DATABASE SCHEMA
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="12">
+    <h2>Database Schema &amp; Migrations</h2>
+    <div class="divider"></div>
+
+    <!-- Migration timeline -->
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:22px;">
+      <div style="background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:8px 14px;text-align:center;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);">V1</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Initial tables<br>+ indexes</div>
+      </div>
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.4;"></div>
+      <div style="background:var(--surface);border:1px solid var(--accent2);border-radius:8px;padding:8px 14px;text-align:center;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent2);">V2</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Seed customers<br>Alice &amp; Bob</div>
+      </div>
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--accent2),var(--accent4));opacity:.4;"></div>
+      <div style="background:var(--surface);border:1px solid var(--accent4);border-radius:8px;padding:8px 14px;text-align:center;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent4);">V3</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Query-pattern<br>covering indexes</div>
+      </div>
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--accent4),var(--accent3));opacity:.4;"></div>
+      <div style="background:var(--surface);border:1px solid var(--accent3);border-radius:8px;padding:8px 14px;text-align:center;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent3);">V4</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">PG enums · accounts<br>table · GIN index</div>
+      </div>
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--accent3),var(--accent));opacity:.4;"></div>
+      <div style="background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:8px 14px;text-align:center;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);">V5</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Populate accounts<br>+ FK constraint</div>
+      </div>
+    </div>
+
+    <!-- ER diagram -->
+    <div style="display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:20px;align-items:start;">
+
+      <!-- customers table -->
+      <div>
+        <div style="background:var(--surface);border:2px solid var(--accent);border-radius:10px;overflow:hidden;">
+          <div style="background:rgba(108,99,255,.2);padding:8px 14px;font-size:12px;font-weight:700;color:var(--accent);font-family:monospace;">customers</div>
+          <div style="padding:10px 14px;font-family:monospace;font-size:11px;">
+            <div style="color:var(--accent4);margin-bottom:4px;">id <span style="color:var(--muted);">UUID PK</span></div>
+            <div style="color:var(--muted);margin-bottom:4px;">name VARCHAR</div>
+            <div style="color:var(--muted);">email VARCHAR UNIQUE</div>
+          </div>
+        </div>
+        <div style="text-align:center;font-size:18px;color:var(--muted);margin:6px 0;">↓ 1:M</div>
+        <div style="background:var(--surface);border:2px solid var(--accent2);border-radius:10px;overflow:hidden;">
+          <div style="background:rgba(0,212,170,.15);padding:8px 14px;font-size:12px;font-weight:700;color:var(--accent2);font-family:monospace;">accounts</div>
+          <div style="padding:10px 14px;font-family:monospace;font-size:11px;">
+            <div style="color:var(--accent4);margin-bottom:4px;">id <span style="color:var(--muted);">UUID PK</span></div>
+            <div style="color:var(--muted);margin-bottom:4px;">customer_id UUID FK</div>
+            <div style="color:var(--muted);margin-bottom:4px;">name VARCHAR</div>
+            <div style="color:var(--muted);">source VARCHAR</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- transactions table (main) -->
+      <div>
+        <div style="background:var(--surface);border:2px solid var(--accent4);border-radius:10px;overflow:hidden;">
+          <div style="background:rgba(255,217,61,.12);padding:8px 14px;font-size:12px;font-weight:700;color:var(--accent4);font-family:monospace;">transactions</div>
+          <div style="padding:10px 14px;font-family:monospace;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;">
+            <div style="color:var(--accent4);">id <span style="color:var(--muted);">UUID PK</span></div>
+            <div style="color:var(--muted);">merchant_name</div>
+            <div style="color:var(--muted);">customer_id FK</div>
+            <div style="color:var(--muted);">data_source_id</div>
+            <div style="color:var(--muted);">account_id FK</div>
+            <div style="color:var(--muted);">occurred_at</div>
+            <div style="color:var(--muted);">amount NUMERIC(19,4)</div>
+            <div style="color:var(--muted);">created_at</div>
+            <div style="color:var(--accent2);">type <span style="color:var(--muted);">tx_type</span></div>
+            <div style="color:var(--muted);">updated_at</div>
+            <div style="color:var(--accent2);">status <span style="color:var(--muted);">tx_status</span></div>
+            <div style="color:var(--accent2);">category <span style="color:var(--muted);">tx_category</span></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="tag" style="font-size:10px;">idx: customer_id</span>
+          <span class="tag" style="font-size:10px;">idx: account_id</span>
+          <span class="tag" style="font-size:10px;">idx: occurred_at</span>
+          <span class="tag" style="font-size:10px;">idx: category</span>
+          <span class="tag" style="font-size:10px;">composite: (account_id, occurred_at)</span>
+          <span class="tag" style="font-size:10px;">GIN: description || merchant_name</span>
+          <span class="tag" style="font-size:10px;">partial: PENDING status</span>
+        </div>
+      </div>
+
+      <!-- PG enums -->
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">PG Enum: tx_type</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--muted);">CREDIT · DEBIT</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">PG Enum: tx_status</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--muted);">COMPLETED · PENDING · FAILED</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">PG Enum: tx_category</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--muted);line-height:1.7;">SALARY · RENT_AND_MORTGAGE<br>TRANSFER · FOOD_AND_DINING<br>TRANSPORT · UTILITIES<br>SHOPPING · HEALTHCARE<br>EDUCATION · OTHER</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent4);margin-bottom:4px;">Auto-update trigger</div>
+          <div style="font-size:11px;color:var(--muted);">updated_at set automatically on every row change</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 14 — KAFKA DEEP DIVE
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="13">
+    <h2>Kafka Deep Dive</h2>
+    <div class="divider"></div>
+
+    <!-- Batch consumer lifecycle pipeline -->
+    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">Batch Consumer Lifecycle</p>
+    <div class="pipeline" style="margin-bottom:22px;">
+      <div class="pipe-step" style="border-color:var(--accent3);">
+        <div class="label" style="color:var(--accent3);">Kafka Poll</div>
+        <div class="detail">Batch up to<br>250 events · 5 MB</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Flux.fromIterable</div>
+        <div class="detail">Reactive pipeline<br>from batch list</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Map</div>
+        <div class="detail">Event payload<br>→ Transaction</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="label">Categorise</div>
+        <div class="detail">Keyword rules<br>→ Category</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:var(--accent2);">
+        <div class="label" style="color:var(--accent2);">R2DBC Upsert</div>
+        <div class="detail">3× retry<br>200 ms backoff</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:var(--accent);">
+        <div class="label" style="color:var(--accent);">Manual Ack</div>
+        <div class="detail">Offset committed<br>only on success</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:var(--accent3);">
+        <div class="label" style="color:var(--accent3);">DLT</div>
+        <div class="detail">Fatal failures<br>rerouted here</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;">
+
+      <div class="card">
+        <h3 style="color:var(--accent4);">Batch Listener</h3>
+        <p style="font-size:12px;margin-top:6px;">Consumes a <strong style="color:var(--text);">list</strong> of records per poll rather than one at a time. Reduces broker round-trips and amortises the R2DBC connection overhead across up to 250 events per batch.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent);">Manual Offset Commit</h3>
+        <p style="font-size:12px;margin-top:6px;">The consumer <strong style="color:var(--text);">holds the offset</strong> until the full reactive pipeline completes. If the JVM crashes mid-batch, Kafka redelivers the entire batch on the next poll — no events are silently lost.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent3);">Dead-Letter Topic</h3>
+        <p style="font-size:12px;margin-top:6px;">Events that exhaust all retries are published to a <strong style="color:var(--text);">DLT</strong> instead of blocking the main topic. Operations can inspect, replay, or discard them independently without stalling healthy consumers.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent2);">Exactly-Once Guarantee</h3>
+        <ul style="padding-left:14px;margin-top:6px;">
+          <li style="font-size:12px;">R2DBC <strong style="color:var(--text);">upsert by ID</strong> — re-processing the same event is idempotent</li>
+          <li style="font-size:12px;">Offset only committed after DB write succeeds</li>
+          <li style="font-size:12px;">Combined: at-least-once delivery + idempotent writes = effectively exactly-once</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Retry + DLT visual note -->
+    <div style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;color:var(--text);">Retry strategy:</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="tag" style="font-size:11px;">Attempt 1</span>
+        <span style="color:var(--muted);font-size:13px;">→</span>
+        <span class="tag" style="font-size:11px;">Wait 200 ms</span>
+        <span style="color:var(--muted);font-size:13px;">→</span>
+        <span class="tag" style="font-size:11px;">Attempt 2</span>
+        <span style="color:var(--muted);font-size:13px;">→</span>
+        <span class="tag" style="font-size:11px;">Wait 200 ms</span>
+        <span style="color:var(--muted);font-size:13px;">→</span>
+        <span class="tag" style="font-size:11px;">Attempt 3</span>
+        <span style="color:var(--muted);font-size:13px;">→</span>
+        <span class="tag red" style="font-size:11px;">Route to DLT</span>
+      </div>
+      <span style="font-size:12px;color:var(--muted);margin-left:auto;">Offset NOT committed on DLT route → broker will not redeliver</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 15 — TRANSACTION CATEGORISATION
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="14">
+    <h2>Transaction Categorisation Engine</h2>
+    <div class="divider"></div>
+
+    <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:start;">
+
+      <!-- Left: rule chain + worked example -->
+      <div>
+        <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px;">Ordered Rule Chain — first match wins</p>
+
+        <!-- Rule chain -->
+        <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:18px;">
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--muted);flex-shrink:0;">1</div>
+            <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:700;color:var(--accent2);">SALARY</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--muted);">salary · payroll · monthly pay</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--muted);flex-shrink:0;">2</div>
+            <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:700;color:var(--accent2);">RENT_AND_MORTGAGE</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--muted);">rent · mortgage · landlord</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--accent3);flex-shrink:0;font-weight:700;">3</div>
+            <div style="flex:1;background:var(--surface);border:2px solid var(--accent3);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:700;color:var(--accent3);">TRANSFER</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--muted);">payment to · wire transfer · transfer</span>
+            </div>
+          </div>
+          <div style="padding-left:32px;font-size:10px;color:var(--accent3);font-style:italic;margin-top:-2px;margin-bottom:2px;">↑ must come before FOOD — "Uber Eats payment to..." would match TRANSPORT otherwise</div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--accent3);flex-shrink:0;font-weight:700;">4</div>
+            <div style="flex:1;background:var(--surface);border:2px solid var(--accent3);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:700;color:var(--accent3);">FOOD_AND_DINING</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--muted);">restaurant · uber eats · deliveroo</span>
+            </div>
+          </div>
+          <div style="padding-left:32px;font-size:10px;color:var(--accent3);font-style:italic;margin-top:-2px;margin-bottom:2px;">↑ must come before TRANSPORT — "Uber Eats" shares keyword with Uber ride</div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--muted);flex-shrink:0;">5</div>
+            <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:700;color:var(--accent2);">TRANSPORT</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--muted);">uber · train · bus · taxi · fuel</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--muted);flex-shrink:0;">…</div>
+            <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;color:var(--muted);">UTILITIES · SHOPPING · HEALTHCARE · EDUCATION · INSURANCE</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:22px;text-align:right;font-size:10px;color:var(--muted);flex-shrink:0;">∅</div>
+            <div style="flex:1;background:var(--surface2);border:1px dashed var(--border);border-radius:6px;padding:7px 12px;">
+              <span style="font-size:12px;color:var(--muted);font-style:italic;">No match → </span><span style="font-size:12px;font-weight:700;color:var(--muted);">OTHER</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: worked example + design notes -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- Worked example -->
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;">
+          <p style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;">Worked Example</p>
+          <div style="font-family:monospace;font-size:11px;display:flex;flex-direction:column;gap:6px;">
+            <div style="background:var(--surface2);border-radius:5px;padding:6px 10px;">
+              <span style="color:var(--muted);">input: </span><span style="color:var(--accent4);">"Uber Eats order #1234"</span>
+            </div>
+            <div style="padding-left:8px;color:var(--muted);">rule 1 SALARY → <span style="color:var(--accent3);">no match</span></div>
+            <div style="padding-left:8px;color:var(--muted);">rule 2 RENT   → <span style="color:var(--accent3);">no match</span></div>
+            <div style="padding-left:8px;color:var(--muted);">rule 3 TRANSFER → <span style="color:var(--accent3);">no match</span></div>
+            <div style="padding-left:8px;color:var(--accent2);">rule 4 FOOD → <span style="color:var(--accent2);font-weight:700;">"uber eats" ✓ match</span></div>
+            <div style="background:rgba(0,212,170,.1);border:1px solid var(--accent2);border-radius:5px;padding:6px 10px;margin-top:4px;">
+              <span style="color:var(--muted);">result: </span><span style="color:var(--accent2);font-weight:700;">FOOD_AND_DINING</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Why it lives in domain -->
+        <div class="card">
+          <h3 style="color:var(--accent);">Pure Domain Logic</h3>
+          <p style="font-size:12px;margin-top:6px;">The categorisation service has <strong style="color:var(--text);">zero framework imports</strong>. It takes a string, walks an ordered list of rules, and returns an enum. Trivially unit-testable and swappable — a future ML-based classifier just needs to implement the same port.</p>
+        </div>
+
+        <!-- Design tradeoff -->
+        <div class="card">
+          <h3 style="color:var(--accent4);">Order is a contract</h3>
+          <p style="font-size:12px;margin-top:6px;">Changing rule order is a <strong style="color:var(--text);">breaking change</strong> — it silently reclassifies existing transactions on re-sync. Any reordering requires a migration or a versioned ruleset.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 16 — LOCAL DEV SETUP
+  ══════════════════════════════════════════════ -->
+  <section class="slide" data-index="15">
+    <h2>Local Dev Setup</h2>
+    <div class="divider"></div>
+
+    <!-- startup command -->
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 18px;margin-bottom:20px;font-family:monospace;font-size:13px;display:flex;align-items:center;gap:16px;">
+      <span style="color:var(--muted);">$</span>
+      <span style="color:var(--accent2);">docker compose up -d</span>
+      <span style="color:var(--muted);font-size:12px;margin-left:8px;">— all services start in dependency order via health checks</span>
+    </div>
+
+    <!-- service map -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+      <!-- Left: startup order diagram -->
+      <div>
+        <p style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px;">Startup Order (health-check gated)</p>
+
+        <!-- Tier 1 -->
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">Tier 1 — no dependencies</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent4);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent4);">PostgreSQL</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:5432</div>
+            <div style="font-size:10px;color:var(--muted);">health: pg_isready</div>
+          </div>
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent4);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent4);">Vault</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:8200</div>
+            <div style="font-size:10px;color:var(--muted);">health: vault status</div>
+          </div>
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent4);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent4);">Kafka</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:9092</div>
+            <div style="font-size:10px;color:var(--muted);">health: kafka-topics --list</div>
+          </div>
+        </div>
+
+        <div style="text-align:center;font-size:16px;color:var(--muted);margin-bottom:6px;">↓ healthy</div>
+
+        <!-- Tier 2 -->
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">Tier 2 — depends on Tier 1</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent2);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent2);">Prometheus</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:9090</div>
+            <div style="font-size:10px;color:var(--muted);">scrapes /actuator/prometheus</div>
+          </div>
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent2);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent2);">Zipkin</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:9411</div>
+            <div style="font-size:10px;color:var(--muted);">receives OTEL spans</div>
+          </div>
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent2);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent2);">Kafka UI</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:8090</div>
+            <div style="font-size:10px;color:var(--muted);">topic + consumer lag</div>
+          </div>
+        </div>
+
+        <div style="text-align:center;font-size:16px;color:var(--muted);margin-bottom:6px;">↓ healthy</div>
+
+        <!-- Tier 3 -->
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">Tier 3 — depends on Tier 2</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div style="flex:1;background:var(--surface);border:2px solid var(--accent);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent);">Grafana</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:3000  admin/admin</div>
+            <div style="font-size:10px;color:var(--muted);">pre-provisioned dashboards</div>
+          </div>
+          <div style="flex:2;background:var(--surface);border:2px solid var(--accent);border-radius:8px;padding:10px 14px;">
+            <div style="font-size:12px;font-weight:700;color:var(--accent);">Transaction Aggregator</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px;">:8080  — waits for PG + Vault + Kafka healthy</div>
+            <div style="font-size:10px;color:var(--muted);">Flyway migrations run before Netty starts</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: quick-reference cards -->
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="font-size:12px;font-weight:600;color:var(--text);">Quick Reference</p>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+          <div style="background:var(--surface2);padding:7px 14px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Key URLs</div>
+          <div style="padding:10px 14px;display:flex;flex-direction:column;gap:5px;font-size:12px;font-family:monospace;">
+            <div><span style="color:var(--accent2);">localhost:8080/swagger-ui.html</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— API docs</span></div>
+            <div><span style="color:var(--accent2);">localhost:8080/actuator/health</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— health</span></div>
+            <div><span style="color:var(--accent2);">localhost:3000</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— Grafana dashboards</span></div>
+            <div><span style="color:var(--accent2);">localhost:9411</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— Zipkin traces</span></div>
+            <div><span style="color:var(--accent2);">localhost:8090</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— Kafka UI</span></div>
+            <div><span style="color:var(--accent2);">localhost:8200</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— Vault UI</span></div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+          <div style="background:var(--surface2);padding:7px 14px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Useful Commands</div>
+          <div style="padding:10px 14px;display:flex;flex-direction:column;gap:5px;font-size:12px;font-family:monospace;">
+            <div><span style="color:var(--accent4);">mvn verify</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— run all tests + coverage</span></div>
+            <div><span style="color:var(--accent4);">mvn spring-boot:run</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— run app locally</span></div>
+            <div><span style="color:var(--accent4);">docker compose logs -f app</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— tail app logs</span></div>
+            <div><span style="color:var(--accent4);">docker compose ps</span> <span style="color:var(--muted);font-family:sans-serif;font-size:11px;">— check service health</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="color:var(--accent3);">Vault in dev</h3>
+          <p style="font-size:12px;margin-top:6px;">Local dev uses obvious placeholder secrets (<code style="font-size:11px;color:var(--accent2);">local-dev-only</code>) that are intentionally unfit for production. Vault resolves real secrets in docker and prod profiles automatically.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 17 — CLOSING
+  ══════════════════════════════════════════════ -->
+  <section class="slide slide-closing" data-index="16">
+    <h1 style="font-size:42px;">Production-Ready by Design</h1>
+    <p class="subtitle" style="max-width:560px;text-align:center;margin-top:10px;">
+      Every layer is observable, testable in isolation, and replaceable without touching the core domain.
+    </p>
+    <div class="closing-grid">
+      <div class="closing-stat">
+        <div class="num">6</div>
+        <div class="desc">Architecture Decision Records</div>
+      </div>
+      <div class="closing-stat">
+        <div class="num">90%</div>
+        <div class="desc">Service layer test coverage</div>
+      </div>
+      <div class="closing-stat">
+        <div class="num">5</div>
+        <div class="desc">Flyway schema migrations</div>
+      </div>
+      <div class="closing-stat">
+        <div class="num">0</div>
+        <div class="desc">Blocking calls in reactor pipeline</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+      <span class="tag purple">Hexagonal Architecture</span>
+      <span class="tag">Reactive (WebFlux + R2DBC)</span>
+      <span class="tag yellow">ArchUnit enforced</span>
+      <span class="tag">Testcontainers</span>
+      <span class="tag purple">Prometheus + Zipkin</span>
+      <span class="tag">Vault secrets</span>
+      <span class="tag yellow">OpenAPI 3.0</span>
+    </div>
+  </section>
+
+</div><!-- /deck -->
+
+<div class="slide-counter" id="counter">1 / 17</div>
+
+<div class="nav">
+  <button onclick="prev()">&#8592; Prev</button>
+  <button onclick="next()">Next &#8594;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let current = 0;
+
+  function show(n) {
+    slides[current].classList.remove('active');
+    current = (n + slides.length) % slides.length;
+    slides[current].classList.add('active');
+    document.getElementById('counter').textContent = `${current + 1} / ${slides.length}`;
+    const pct = ((current + 1) / slides.length) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+  }
+
+  function next() { show(current + 1); }
+  function prev() { show(current - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                    { e.preventDefault(); prev(); }
+  });
+
+  // Touch/swipe support
+  let touchX = 0;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    const diff = touchX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) diff > 0 ? next() : prev();
+  });
+
+  // Init progress
+  document.getElementById('progress').style.width = (1 / slides.length * 100) + '%';
+</script>
+</body>
+</html>
