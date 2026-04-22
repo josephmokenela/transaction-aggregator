@@ -1,6 +1,8 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM amazoncorretto:21 AS builder
+FROM amazoncorretto:21-al2023 AS builder
 WORKDIR /app
+
+RUN dnf install -y tar gzip && dnf clean all
 
 # Copy wrapper + POM first so the dependency layer is cached independently
 COPY .mvn/ .mvn/
@@ -15,13 +17,12 @@ RUN ./mvnw package -DskipTests -q
 RUN java -Djarmode=layertools -jar target/*.jar extract --destination target/extracted
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM amazoncorretto:21-jre AS runtime
+FROM amazoncorretto:21-al2023 AS runtime
 WORKDIR /app
 
-# Install curl for the HEALTHCHECK probe (Amazon Linux 2023 uses dnf)
-RUN dnf install -y curl && dnf clean all
+RUN dnf install -y shadow-utils && dnf clean all
 
-# Non-root user for least-privilege execution (Amazon Linux uses groupadd/useradd)
+# Non-root user for least-privilege execution
 RUN groupadd -r appgroup && useradd -r -g appgroup -s /sbin/nologin appuser
 
 # Copy layers in order — least-volatile first so Docker reuses cache efficiently
