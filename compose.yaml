@@ -101,10 +101,7 @@ services:
     restart: unless-stopped
 
   transaction-aggregator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: transaction-aggregator:latest
+    image: josephmokenela01/transaction-aggregator:latest
     container_name: transaction-aggregator
     depends_on:
       postgres:
